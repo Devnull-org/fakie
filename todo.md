@@ -2,8 +2,10 @@
 
 - ~~provide a way to specify configuration for the haskell server that will output
   the json user wants (route, port etc.)~~
-- the configuration shall be done through a minimal web interface (yesod with sqlite)
-- I am thinking in terms of routes, so user should define a ~~config file~~ configuration that
+- the configuration shall be done through a ~~minimal web interface (yesod with
+sqlite)~~ config file that is checked for
+errors at compile time using template haskell
+- I am thinking in terms of routes, so user should define a config file that
   shows how to access some api. 
 - User should be able to specify a route which should return certain
   json, html, xml or whatever (user provided).
