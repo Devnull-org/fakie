@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TemplateHaskell     #-}
@@ -5,21 +7,23 @@
 module Fakie where
 
 import qualified Control.Error          as ER
-import           Control.Exception.Safe (Exception, MonadThrow, SomeException (..),
-                                         throwM, tryAny)
+import           Control.Exception.Safe (Exception, MonadThrow,
+                                         SomeException (..), throwIO, throwM, tryAny)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Data.Aeson
 import           Data.Aeson.TH
 import qualified Data.ByteString.Lazy   as BSL
+import           Data.Maybe             (fromMaybe)
+import           Data.Proxy
 import           Data.Text              (Text)
-import qualified Data.Text              as T
-import           Network.HTTP.Types     (StdMethod)
+import qualified Network.HTTP.Req       as R
 import           System.Directory       (getCurrentDirectory, listDirectory)
 import           System.FilePath        ((</>))
 import           Text.Casing            (camel)
+import qualified Text.URI               as URI
 
 configFileName :: FilePath
-configFileName = ".fakie.conf"
+configFileName = ".fakie.json"
 
 newtype FakieException = FakieException String deriving (Show, Eq)
 
@@ -75,7 +79,7 @@ data FakieItem =
 
 $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 9 }) ''FakieItem)
 
-data FakieApi =
+newtype FakieApi =
   FakieApi
     { fakieApiItems :: [FakieItem]
     } deriving (Eq, Show)
@@ -84,26 +88,60 @@ $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 8 }) ''FakieApi
 
 type Fakie = [FakieItem]
 
--- instance FromJSON Fakie where
---   parseJSON = withArray "[]" $ \arr ->
---     parseJSON arr
-
--- $(deriveJSON defaultOptions ''Fakie)
-
 readFakieConfig :: (MonadIO m, MonadThrow m) => m Fakie
 readFakieConfig = do
   eFakie <- ER.runExceptT $ do
     cwd <- ER.ExceptT $ liftIO (tryAny getCurrentDirectory)
-    liftIO $ putStrLn cwd
     fileList <- ER.ExceptT $ liftIO (tryAny $ listDirectory cwd)
     if configFileName `notElem` fileList
-      then undefined -- throwM (SomeException "No config file detected")
+      then throwM (FakieException "No config file detected")
       else do
-        liftIO $ putStrLn (cwd </> configFileName)
         fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> configFileName)
         ER.hoistEither $ ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
   case eFakie of
     Left (err :: SomeException) -> throwM (FakieException $ show err)
     Right fakieConfig -> do
-      liftIO $ print fakieConfig
+      mapM_
+        (\apiItem -> do
+           val <- liftIO $ callApi apiItem
+           liftIO $ print val
+        ) fakieConfig
       return fakieConfig
+
+runGET
+  :: R.Url scheme
+  -> R.NoReqBody
+  -> Proxy (R.JsonResponse Value)
+  -> R.Option scheme
+  -> R.Req (R.JsonResponse Value)
+runGET = R.req R.GET
+
+callApi :: (MonadIO m, MonadThrow m) => FakieItem -> m Value
+callApi fItem@FakieItem {..} = do
+  let queryParams = constructQueryParams fItem
+  uri <- URI.mkURI fakieItemUrl
+  case R.useHttpsURI uri of
+    Nothing -> throwIO (FakieException "Trying to use https on http route!")
+    Just (url, _options) -> R.runReq R.defaultHttpConfig $ do
+      v <- runGET url R.NoReqBody R.jsonResponse (fromMaybe mempty queryParams)
+      let rBody = R.responseBody v
+      return rBody
+
+constructQueryParams :: (R.QueryParam a, Monoid a) => FakieItem -> Maybe a
+constructQueryParams FakieItem {..} =
+  case fakieItemQueryParams of
+    [] -> Nothing
+    qparams ->
+      Just $
+      foldMap
+      (\FakieQueryParam {..} ->
+        fakieQueryParamName R.=: fakieQueryParamValue
+      ) qparams
+
+-- constructHttpMethod :: R.HttpMethod method => Method -> method
+-- constructHttpMethod method =
+--   case method of
+--     GET    -> R.GET
+--     POST   -> R.POST
+--     PUT    -> R.PUT
+--     DELETE -> R.DELETE

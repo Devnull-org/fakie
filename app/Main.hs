@@ -1,4 +1,9 @@
 module Main where
 
+import Fakie
+
 main :: IO ()
-main = putStrLn "Fakie Api server operational!"
+main = do
+  putStrLn "Fakie Api server operational!"
+  config <- readFakieConfig
+  print config
