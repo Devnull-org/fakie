@@ -1,92 +1,22 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Fakie where
 
 import qualified Control.Error          as ER
-import           Control.Exception.Safe (Exception, MonadThrow,
-                                         SomeException (..), throwIO, throwM, tryAny)
+import           Control.Exception.Safe (MonadThrow, SomeException (..),
+                                         throwIO, throwM, tryAny)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Data.Aeson
-import           Data.Aeson.TH
 import qualified Data.ByteString.Lazy   as BSL
-import           Data.Maybe             (fromMaybe)
 import           Data.Proxy
-import           Data.Text              (Text)
+import           Debug.Pretty.Simple    (pTraceShowM)
 import qualified Network.HTTP.Req       as R
 import           System.Directory       (getCurrentDirectory, listDirectory)
 import           System.FilePath        ((</>))
-import           Text.Casing            (camel)
 import qualified Text.URI               as URI
-
-configFileName :: FilePath
-configFileName = ".fakie.json"
-
-newtype FakieException = FakieException String deriving (Show, Eq)
-
-instance Exception FakieException
-
-data Method
-  = GET
-  | POST
-  | PUT
-  | DELETE
-  | HEAD
-  | OPTIONS
-  | PATCH
-  deriving (Eq, Show)
-
-$(deriveJSON defaultOptions ''Method)
-
-data FakieQueryParam =
-  FakieQueryParam
-    { fakieQueryParamName  :: Text
-    , fakieQueryParamValue :: Text
-    } deriving (Eq, Show)
-
-$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 15 }) ''FakieQueryParam)
-
-data FakieHeader =
-  FakieHeader
-    { fakieHeaderName  :: Text
-    , fakieHeaderValue :: Text
-    } deriving (Eq, Show)
-
-$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 11 }) ''FakieHeader)
-
-data FakieMap =
-  FakieMap
-    { fakieMapOurkey    :: Text
-    , fakieMapTheirkey  :: Text
-    , fakieMapFieldtype :: Text
-    } deriving (Eq, Show)
-
-$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 8 }) ''FakieMap)
-
-data FakieItem =
-  FakieItem
-   { fakieItemName        :: Text
-   , fakieItemRoute       :: Text
-   , fakieItemMethod      :: Method
-   , fakieItemUrl         :: Text
-   , fakieItemQueryParams :: [FakieQueryParam]
-   , fakieItemHeaders     :: [FakieHeader]
-   , fakieItemMapping     :: [FakieMap]
-   } deriving (Eq, Show)
-
-$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 9 }) ''FakieItem)
-
-newtype FakieApi =
-  FakieApi
-    { fakieApiItems :: [FakieItem]
-    } deriving (Eq, Show)
-
-$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 8 }) ''FakieApi)
-
-type Fakie = [FakieItem]
+import           Types
 
 readFakieConfig :: (MonadIO m, MonadThrow m) => m Fakie
 readFakieConfig = do
@@ -99,12 +29,12 @@ readFakieConfig = do
         fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> configFileName)
         ER.hoistEither $ ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
   case eFakie of
-    Left (err :: SomeException) -> throwM (FakieException $ show err)
+    Left err -> throwM (FakieException $ show err)
     Right fakieConfig -> do
       mapM_
         (\apiItem -> do
            val <- liftIO $ callApi apiItem
-           liftIO $ print val
+           pTraceShowM val
         ) fakieConfig
       return fakieConfig
 
@@ -118,30 +48,43 @@ runGET = R.req R.GET
 
 callApi :: (MonadIO m, MonadThrow m) => FakieItem -> m Value
 callApi fItem@FakieItem {..} = do
-  let queryParams = constructQueryParams fItem
   uri <- URI.mkURI fakieItemUrl
-  case R.useHttpsURI uri of
-    Nothing -> throwIO (FakieException "Trying to use https on http route!")
-    Just (url, _options) -> R.runReq R.defaultHttpConfig $ do
-      v <- runGET url R.NoReqBody R.jsonResponse (fromMaybe mempty queryParams)
-      let rBody = R.responseBody v
-      return rBody
+  urlAndOptions <-
+    case R.useURI uri of
+      Nothing -> throwIO (FakieException "Could not parse uri")
+      Just urlAndOptions' -> return urlAndOptions'
+  jsonResponse <-
+    case urlAndOptions of
+      Left (url, options')  ->
+        let queryParams = constructQueryParams fItem
+            options = options' <> queryParams
+        in runReqCall fItem url options
+      Right (url, options') ->
+        let queryParams = constructQueryParams fItem
+            options = options' <> queryParams
+        in runReqCall fItem url options
+  let rBody = R.responseBody jsonResponse
+  return rBody
 
-constructQueryParams :: (R.QueryParam a, Monoid a) => FakieItem -> Maybe a
+runReqCall
+  :: (MonadIO m, FromJSON a)
+  => FakieItem
+  -> R.Url scheme
+  -> R.Option scheme
+  -> m (R.JsonResponse a)
+runReqCall FakieItem {..} url options = R.runReq R.defaultHttpConfig $ do
+  case fakieItemMethod of
+    GET ->
+      R.req R.GET url R.NoReqBody R.jsonResponse options
+    _ -> fail "Not yet implemented"
+
+constructQueryParams :: (R.QueryParam a, Monoid a) => FakieItem -> a
 constructQueryParams FakieItem {..} =
   case fakieItemQueryParams of
-    [] -> Nothing
+    [] -> mempty
     qparams ->
-      Just $
       foldMap
       (\FakieQueryParam {..} ->
         fakieQueryParamName R.=: fakieQueryParamValue
       ) qparams
 
--- constructHttpMethod :: R.HttpMethod method => Method -> method
--- constructHttpMethod method =
---   case method of
---     GET    -> R.GET
---     POST   -> R.POST
---     PUT    -> R.PUT
---     DELETE -> R.DELETE

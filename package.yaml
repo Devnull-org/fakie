@@ -23,6 +23,7 @@ dependencies:
 - vector
 - safe-exceptions
 - errors
+- pretty-simple
 - req >= 3.1.0
 - req-conduit
 - modern-uri
