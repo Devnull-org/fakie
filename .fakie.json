@@ -22,6 +22,7 @@
          "value": "Bearer xllfduyierndkjfh32098dfhaf097a90743roifahd"
         }
       ],
+    "body": {"requestBody": "rocks!"},
     "mapping":
       [
         { "ourkey" : "usr",

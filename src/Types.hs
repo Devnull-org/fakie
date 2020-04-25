@@ -10,6 +10,7 @@ module Types
   ) where
 
 import           Control.Exception.Safe (Exception)
+import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Text              (Text)
 import           Text.Casing            (camel)
@@ -66,6 +67,7 @@ data FakieItem =
    , fakieItemUrl         :: Text
    , fakieItemQueryParams :: [FakieQueryParam]
    , fakieItemHeaders     :: [FakieHeader]
+   , fakieItemBody        :: Maybe Value
    , fakieItemMapping     :: [FakieMap]
    } deriving (Eq, Show)
 

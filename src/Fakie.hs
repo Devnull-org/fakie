@@ -72,7 +72,7 @@ runReqCall
   -> R.Url scheme
   -> R.Option scheme
   -> m (R.JsonResponse a)
-runReqCall FakieItem {..} url options = R.runReq R.defaultHttpConfig $ do
+runReqCall FakieItem {..} url options = R.runReq R.defaultHttpConfig $
   case fakieItemMethod of
     GET ->
       R.req R.GET url R.NoReqBody R.jsonResponse options
