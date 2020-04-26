@@ -5,6 +5,7 @@ module Types
   , FakieItem (..)
   , FakieQueryParam (..)
   , FakieException (..)
+  , FakieHeader (..)
   , Method (..)
   , configFileName
   ) where

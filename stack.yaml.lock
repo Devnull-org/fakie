@@ -11,13 +11,6 @@ packages:
       sha256: caa9306e519c601ab0170d113daa03c1163db53e5466be2968bbd61a771bebcb
   original:
     hackage: aeson-1.4.7.1@sha256:6d8d2fd959b7122a1df9389cf4eca30420a053d67289f92cdc0dbc0dab3530ba,7098
-- completed:
-    hackage: req-3.1.0@sha256:c42bf205421a3a07749c725d1a9ebd494dd577cd2f7f62e7ff26a98b3229da1c,4800
-    pantry-tree:
-      size: 712
-      sha256: d91f5677cf1adc0a121fa9aa330270c7eb273f499ba519383a29b0f6b0d4bf22
-  original:
-    hackage: req-3.1.0@sha256:c42bf205421a3a07749c725d1a9ebd494dd577cd2f7f62e7ff26a98b3229da1c,4800
 snapshots:
 - completed:
     size: 524996

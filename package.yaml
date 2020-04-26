@@ -4,9 +4,11 @@ version: "0.0.0"
 dependencies:
 
 - aeson
+- async
 - base >=4.9.1.0 && <5
 - bytestring
 - casing
+- case-insensitive
 - containers
 - directory
 - filepath
@@ -17,6 +19,7 @@ dependencies:
 - time
 - transformers
 - http-client-tls
+- http-client
 - http-conduit
 - http-types
 - unordered-containers
@@ -24,8 +27,6 @@ dependencies:
 - safe-exceptions
 - errors
 - pretty-simple
-- req >= 3.1.0
-- req-conduit
 - modern-uri
 - warp
 - wai
