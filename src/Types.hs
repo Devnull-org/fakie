@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module Types
   ( Fakie
   , FakieItem (..)
@@ -15,6 +13,7 @@ import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Text              (Text)
 import           Text.Casing            (camel)
+import           Prelude (Eq, Show, String, FilePath, drop, (.), Maybe)
 
 configFileName :: FilePath
 configFileName = ".fakie.json"
