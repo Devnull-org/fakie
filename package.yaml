@@ -7,13 +7,13 @@ dependencies:
 - async
 - base >=4.9.1.0 && <5
 - bytestring
+- blaze-builder
 - casing
 - case-insensitive
 - containers
+- co-log
 - directory
 - filepath
-- persistent
-- persistent-sqlite
 - text
 - template-haskell
 - time
@@ -27,7 +27,9 @@ dependencies:
 - safe-exceptions
 - errors
 - pretty-simple
-- modern-uri
+- mtl
+- lens
+- lens-aeson
 - warp
 - wai
 - wai-extra
