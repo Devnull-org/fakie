@@ -11,7 +11,7 @@ import           Control.Monad.Trans
 import qualified Data.Text                as T
 import           Debug.Pretty.Simple      (pTraceShowM)
 import           Fakie
-import           Prelude                  (Either (..), IO, putStrLn, return,
+import           Prelude                  (Either (..), IO, putStrLn, return, (<$>),
                                            show, ($), (.))
 
 main :: IO ()
@@ -24,6 +24,9 @@ main = usingLoggerT logAction $ do
       liftIO $ putStrLn "Fakie config could not be obtained. More info is in the log files"
     Right fakieConfig -> do
       v <- liftIO $ mapConcurrently callApi fakieConfig
+      pTraceShowM "findValueKey"
+      pTraceShowM $ findValueKey "userId" <$> v
+      liftIO $ putStrLn "Fakie request done"
       return ()
   where
     logAction = cmap fmtMessage logTextStdout

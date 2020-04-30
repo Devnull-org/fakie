@@ -4,7 +4,7 @@ module Fakie where
 
 import           Blaze.ByteString.Builder (Builder, fromByteString,
                                            fromLazyByteString, toLazyByteString)
-import           Colog                    (pattern D, pattern I, LoggerT (..),
+import           Colog                    (pattern D, LoggerT (..),
                                            Message, WithLog, cmap, fmtMessage,
                                            log, logTextStdout, usingLoggerT)
 import qualified Control.Error            as ER
@@ -13,19 +13,22 @@ import           Control.Exception.Safe   (MonadThrow, SomeException (..),
 import           Control.Monad            (when)
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Data.Aeson
+import           Data.HashMap.Strict (lookup, insert)
 import qualified Data.ByteString          as BS
 import qualified Data.ByteString.Lazy     as BSL
 import qualified Data.CaseInsensitive     as CI
 import           Data.Int                 (Int64)
 import qualified Data.Text                as T
+import           Data.Text (Text)
+import           Data.Maybe (isNothing)
+import qualified Data.Vector as V
 import           Data.Text.Encoding       (decodeUtf8, encodeUtf8)
-import           Debug.Pretty.Simple      (pTraceShow)
 import           Network.HTTP.Client      (GivesPopper, Request (..),
                                            RequestBody (..), parseUrlThrow)
 import           Network.HTTP.Simple
 import           Prelude                  (Either (..), Maybe (..), String,
-                                           error, fromIntegral, notElem, print,
-                                           return, show, ($), (.), (/=), (<$>),
+                                           error, fromIntegral, notElem,
+                                           return, show, ($), (.), (/=), (<$>), (+), otherwise,
                                            (<>))
 import           System.Directory         (getCurrentDirectory, listDirectory)
 import           System.FilePath          ((</>))
@@ -39,8 +42,7 @@ readFakieConfig =
     cwd <- ER.ExceptT $ liftIO (tryAny getCurrentDirectory)
     fileList <- ER.ExceptT $ liftIO (tryAny $ listDirectory cwd)
     if configFileName `notElem` fileList
-      then do
-        throwM (FakieException "No config file detected")
+      then throwM (FakieException "No config file detected")
       else do
         fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> configFileName)
         ER.hoistEither $
@@ -120,3 +122,42 @@ constructQueryParams FakieItem {..} =
   (\FakieQueryParam {..} ->
     (encodeUtf8 fakieQueryParamName,  Just (encodeUtf8 fakieQueryParamValue))
   ) <$> fakieItemQueryParams
+
+findValueKey :: Text -> Value -> Maybe Value
+findValueKey k (Object obj) = lookup k obj
+findValueKey k (Array arr) =
+  go k arr 0
+  where
+    go k' arr' ind
+      | isNothing (arr' V.!? ind) = Nothing
+      | otherwise =
+          case arr' V.!? ind of
+            Nothing -> Nothing
+            Just v ->
+              case findValueKey k' v of
+                Nothing -> go k' arr' (ind + 1)
+                Just val -> Just val
+findValueKey _ (String _) = Nothing
+findValueKey _ (Number _) = Nothing
+findValueKey _ (Bool _)   = Nothing
+findValueKey _ Null       = Nothing
+
+createValueKey :: Text -> Value -> Value -> Value
+createValueKey _  (String _) alreadyExistingValue = alreadyExistingValue
+createValueKey _  (Number _) alreadyExistingValue = alreadyExistingValue
+createValueKey _  (Bool _) alreadyExistingValue = alreadyExistingValue
+createValueKey _  Null alreadyExistingValue = alreadyExistingValue
+createValueKey key newValue alreadyExistingValue =
+  case findValueKey key alreadyExistingValue of
+    -- ok it is safe to insert new value
+    Nothing ->
+      case alreadyExistingValue of
+        Object obj ->
+          let obj' = insert key newValue obj
+          in Object obj'
+        Array arr ->
+          let arr' = V.snoc arr newValue
+          in Array arr'
+        _ -> alreadyExistingValue
+    -- value with this key is already there, just return it
+    Just _ -> alreadyExistingValue
