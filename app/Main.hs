@@ -1,18 +1,18 @@
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PatternSynonyms            #-}
+
 module Main where
 
-import           Colog                    (pattern D, pattern I, Message,
-                                           pattern W, WithLog, cmap, fmtMessage,
-                                           log, logDebug, logInfo,
-                                           logTextStdout, logWarning,
+import           Colog                    (pattern W, cmap, fmtMessage,
+                                               log,
+                                           logTextStdout,
                                            usingLoggerT)
 import           Control.Concurrent.Async (mapConcurrently)
 import           Control.Exception.Safe   (SomeException)
 import           Control.Monad.Trans
 import qualified Data.Text                as T
-import           Debug.Pretty.Simple      (pTraceShowM)
 import           Fakie
-import           Prelude                  (Either (..), IO, putStrLn, return, (<$>),
-                                           show, ($), (.))
+import           Common
 
 main :: IO ()
 main = usingLoggerT logAction $ do
@@ -23,9 +23,14 @@ main = usingLoggerT logAction $ do
       log W (T.pack . show $ err)
       liftIO $ putStrLn "Fakie config could not be obtained. More info is in the log files"
     Right fakieConfig -> do
-      v <- liftIO $ mapConcurrently callApi fakieConfig
-      pTraceShowM "findValueKey"
-      pTraceShowM $ findValueKey "userId" <$> v
+      v <-
+        liftIO $
+          mapConcurrently
+           (\cfg -> do
+             apiResponse <- callApi cfg
+             return $ assignUserKeys cfg apiResponse
+           ) fakieConfig
+      liftIO $ pTraceShowM v
       liftIO $ putStrLn "Fakie request done"
       return ()
   where

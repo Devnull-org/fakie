@@ -25,27 +25,21 @@
     "body": {"requestBody": "rocks!"},
     "mapping":
       [
-        { "ourkey" : "usr",
-          "theirkey" : "user",
-          "fieldtype" :"number"
+        { "ourkey" : "all",
+          "theirkey" : "Array",
+          "shouldKeep": false
         },
-
+        { "ourkey" : "all",
+          "theirkey" : "title"
+        },
+        { "ourkey" : "janakida",
+          "theirkey" : "body"
+        },
         { "ourkey" : "ident",
-          "theirkey" : "id",
-          "fieldtype" : "number"
-        },
-
-        { "ourkey" : "title",
-          "theirkey" : "title",
-          "fieldtype" :"string"
-        },
-        { "ourkey" : "title",
-          "theirkey" : "title",
-          "fieldtype" : "string"
+          "theirkey" : "id"
         },
         { "ourkey" : "b",
-          "theirkey" : "body",
-          "fieldtype" :"string"
+          "theirkey" : "body"
         }
       ]
   }

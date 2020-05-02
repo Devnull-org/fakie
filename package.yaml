@@ -37,18 +37,10 @@ dependencies:
 
 default-extensions:
   - OverloadedStrings
-  - FlexibleContexts
-  - FlexibleInstances
-  - GeneralizedNewtypeDeriving
   - NoImplicitPrelude
-  - OverloadedStrings
   - PatternSynonyms
-  - RankNTypes
-  - RecordWildCards
   - ScopedTypeVariables
-  - StandaloneDeriving
   - TemplateHaskell
-  - GADTs
 
 # The library contains all of our application code. The executable
 # defined below is just a thin wrapper.

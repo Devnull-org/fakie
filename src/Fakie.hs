@@ -1,35 +1,42 @@
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NoImplicitPrelude          #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Fakie where
 
 import           Blaze.ByteString.Builder (Builder, fromByteString,
                                            fromLazyByteString, toLazyByteString)
-import           Colog                    (pattern D, LoggerT (..),
-                                           Message, WithLog, cmap, fmtMessage,
-                                           log, logTextStdout, usingLoggerT)
+import           Colog                    (pattern D, LoggerT (..), Message,
+                                           WithLog, cmap, fmtMessage, log,
+                                           logTextStdout, usingLoggerT)
+import           Common
 import qualified Control.Error            as ER
 import           Control.Exception.Safe   (MonadThrow, SomeException (..),
                                            throwM, tryAny)
 import           Control.Monad            (when)
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Data.Aeson
-import           Data.HashMap.Strict (lookup, insert)
 import qualified Data.ByteString          as BS
 import qualified Data.ByteString.Lazy     as BSL
 import qualified Data.CaseInsensitive     as CI
+import           Data.HashMap.Strict      (delete, empty, insert, lookup)
 import           Data.Int                 (Int64)
+import           Data.Maybe               (isNothing)
+import           Data.Text                (Text)
 import qualified Data.Text                as T
-import           Data.Text (Text)
-import           Data.Maybe (isNothing)
-import qualified Data.Vector as V
 import           Data.Text.Encoding       (decodeUtf8, encodeUtf8)
+import qualified Data.Vector              as V
 import           Network.HTTP.Client      (GivesPopper, Request (..),
                                            RequestBody (..), parseUrlThrow)
 import           Network.HTTP.Simple
-import           Prelude                  (Either (..), Maybe (..), String,
-                                           error, fromIntegral, notElem,
-                                           return, show, ($), (.), (/=), (<$>), (+), otherwise,
-                                           (<>))
 import           System.Directory         (getCurrentDirectory, listDirectory)
 import           System.FilePath          ((</>))
 import           Types
@@ -60,7 +67,6 @@ callApi fItem@FakieItem {..} = liftIO $ do
             setRequestQueryString (constructQueryParams fItem) $
             setUpRequestHeaders request'' fItem
           request = setUpRequestBody request' fItem
-      debugRequestContents request
       response <- httpJSONEither request
       case getResponseBody response :: Either JSONException Value of
         Left err -> throwM (FakieException (show err))
@@ -135,29 +141,100 @@ findValueKey k (Array arr) =
             Nothing -> Nothing
             Just v ->
               case findValueKey k' v of
-                Nothing -> go k' arr' (ind + 1)
+                Nothing  -> go k' arr' (ind + 1)
                 Just val -> Just val
-findValueKey _ (String _) = Nothing
-findValueKey _ (Number _) = Nothing
-findValueKey _ (Bool _)   = Nothing
-findValueKey _ Null       = Nothing
+findValueKey _ _ = Nothing
 
 createValueKey :: Text -> Value -> Value -> Value
-createValueKey _  (String _) alreadyExistingValue = alreadyExistingValue
-createValueKey _  (Number _) alreadyExistingValue = alreadyExistingValue
-createValueKey _  (Bool _) alreadyExistingValue = alreadyExistingValue
-createValueKey _  Null alreadyExistingValue = alreadyExistingValue
-createValueKey key newValue alreadyExistingValue =
-  case findValueKey key alreadyExistingValue of
+createValueKey key newValue userValue =
+  case findValueKey key userValue of
     -- ok it is safe to insert new value
     Nothing ->
-      case alreadyExistingValue of
+      case userValue of
         Object obj ->
           let obj' = insert key newValue obj
           in Object obj'
         Array arr ->
           let arr' = V.snoc arr newValue
           in Array arr'
-        _ -> alreadyExistingValue
+        _ -> userValue
     -- value with this key is already there, just return it
-    Just _ -> alreadyExistingValue
+    Just _ -> userValue
+
+removeValueKey :: Text -> Value -> Value
+removeValueKey removeKey (Object o) = Object (delete removeKey o)
+removeValueKey removeKey _ =
+  error $ "Trying to remove key " <> T.unpack removeKey <> " from value that does not have keys"
+
+specialKeys :: [Text]
+specialKeys = ["Array", "Object"]
+
+assignUserKeys :: FakieItem -> Value -> MappingContext
+assignUserKeys FakieItem {..} apiValue =
+  let mapping =
+        flip execState (MappingContext "" (Object empty)) $
+          mapM
+            (\FakieMap {..} ->
+              -- we are using the special keys to access data
+              if fakieMapTheirkey `elem` specialKeys
+                then
+                  case (fakieMapTheirkey, apiValue) of
+                    ("Array", Array arr) -> do
+                      context  <- get
+                      let newValue =
+                            createValueKey fakieMapOurkey (Array arr) (mappingContextValue context)
+                      modify'
+                        (\mc ->
+                           MappingContext
+                             (mappingContextPossibleErrors mc)
+                             newValue
+                        )
+                    ("Object", Object o) -> do
+                      context  <- get
+                      let newValue =
+                            createValueKey fakieMapOurkey (Object o) (mappingContextValue context)
+                      modify'
+                        (\mc ->
+                           MappingContext (mappingContextPossibleErrors mc) newValue
+                        )
+                    (specKey, _) ->
+                      modify' (\mc ->
+                                 MappingContext
+                                   (mappingContextPossibleErrors mc <> "Trying to use " <> specKey <> " as special key")
+                                   (mappingContextValue mc)
+                              )
+                else
+                  case findValueKey fakieMapTheirkey apiValue of
+                    Nothing ->
+                      modify' (\mc ->
+                                 MappingContext
+                                   (mappingContextPossibleErrors mc <> "Key " <> fakieMapTheirkey <> " not found!")
+                                   (mappingContextValue mc)
+                              )
+                    Just foundVal -> do
+                      context  <- get
+                      let newValue = createValueKey fakieMapOurkey foundVal (mappingContextValue context)
+                      modify'
+                        (\mc ->
+                           MappingContext (mappingContextPossibleErrors mc) newValue
+                        )
+            ) fakieItemMapping
+      keysToRemove =
+        fakieMapOurkey <$>
+        filter
+          (\FakieMap {..} ->
+             fakieMapShouldKeep == Just False
+          ) fakieItemMapping
+      adjustedMapping =
+        flip execState mapping $
+          mapM
+            (\key ->
+              modify'
+                (\mc ->
+                  MappingContext
+                    (mappingContextPossibleErrors mc)
+                    (removeValueKey key (mappingContextValue mc))
+                )
+            ) keysToRemove
+  in
+    adjustedMapping

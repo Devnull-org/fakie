@@ -4,7 +4,9 @@ module Types
   , FakieQueryParam (..)
   , FakieException (..)
   , FakieHeader (..)
+  , FakieMap (..)
   , Method (..)
+  , MappingContext (..)
   , configFileName
   ) where
 
@@ -13,7 +15,7 @@ import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Text              (Text)
 import           Text.Casing            (camel)
-import           Prelude (Eq, Show, String, FilePath, drop, (.), Maybe)
+import           Common
 
 configFileName :: FilePath
 configFileName = ".fakie.json"
@@ -52,12 +54,24 @@ $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 11 }) ''FakieHe
 
 data FakieMap =
   FakieMap
-    { fakieMapOurkey    :: Text
-    , fakieMapTheirkey  :: Text
-    , fakieMapFieldtype :: Text
+    { fakieMapOurkey     :: Text
+    , fakieMapTheirkey   :: Text
+    , fakieMapShouldKeep :: Maybe Bool
     } deriving (Eq, Show)
 
-$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 8 }) ''FakieMap)
+instance FromJSON FakieMap where
+  parseJSON = withObject "FakieMap" $ \o -> do
+    ourKey <- o .: "ourkey"
+    theirKey <- o .: "theirkey"
+    shouldKeep <- o .:? "shouldKeep"
+    return $
+      FakieMap
+        { fakieMapOurkey     = ourKey
+        , fakieMapTheirkey   = theirKey
+        , fakieMapShouldKeep = shouldKeep
+        }
+
+$(deriveToJSON (defaultOptions { fieldLabelModifier = camel . drop 8 }) ''FakieMap)
 
 data FakieItem =
   FakieItem
@@ -81,3 +95,9 @@ newtype FakieApi =
 $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 8 }) ''FakieApi)
 
 type Fakie = [FakieItem]
+
+data MappingContext =
+  MappingContext
+   { mappingContextPossibleErrors :: Text
+   , mappingContextValue :: Value
+   } deriving (Eq, Show)
