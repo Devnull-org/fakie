@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -12,38 +11,29 @@
 
 module Fakie where
 
-import           Blaze.ByteString.Builder (Builder, fromByteString,
-                                           fromLazyByteString, toLazyByteString)
-import           Colog                    (pattern D, LoggerT (..), Message,
-                                           WithLog, cmap, fmtMessage, log,
-                                           logTextStdout, usingLoggerT)
 import           Common
-import qualified Control.Error            as ER
-import           Control.Exception.Safe   (MonadThrow, SomeException (..),
-                                           throwM, tryAny)
-import           Control.Monad            (when)
-import           Control.Monad.IO.Class   (MonadIO, liftIO)
+import qualified Control.Error          as ER
+import           Control.Exception.Safe (MonadThrow, SomeException (..), throwM,
+                                         tryAny)
+import           Control.Monad          (when)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Reader   (MonadReader, ask)
 import           Data.Aeson
-import qualified Data.ByteString          as BS
-import qualified Data.ByteString.Lazy     as BSL
-import qualified Data.CaseInsensitive     as CI
-import           Data.HashMap.Strict      (delete, empty, insert, lookup)
-import           Data.Int                 (Int64)
-import           Data.Maybe               (isNothing)
-import           Data.Text                (Text)
-import qualified Data.Text                as T
-import           Data.Text.Encoding       (decodeUtf8, encodeUtf8)
-import qualified Data.Vector              as V
-import           Network.HTTP.Client      (GivesPopper, Request (..),
-                                           RequestBody (..), parseUrlThrow)
+import qualified Data.ByteString.Lazy   as BSL
+import qualified Data.CaseInsensitive   as CI
+import           Data.HashMap.Strict    (delete, empty, insert, lookup)
+import           Data.Maybe             (isNothing)
+import           Data.Text              (Text)
+import qualified Data.Text              as T
+import           Data.Text.Encoding     (encodeUtf8)
+import qualified Data.Vector            as V
+import           Network.HTTP.Client    (Request (..), parseUrlThrow)
 import           Network.HTTP.Simple
-import           System.Directory         (getCurrentDirectory, listDirectory)
-import           System.FilePath          ((</>))
+import           System.Directory       (getCurrentDirectory, listDirectory)
+import           System.FilePath        ((</>))
 import           Types
 
-deriving instance MonadThrow m => MonadThrow (LoggerT Message m)
-
-readFakieConfig :: (WithLog env Message m, MonadIO m, MonadThrow m) => m (Either SomeException Fakie)
+readFakieConfig :: (MonadIO m, MonadThrow m) => m (Either SomeException Fakie)
 readFakieConfig =
   ER.runExceptT $ do
     cwd <- ER.ExceptT $ liftIO (tryAny getCurrentDirectory)
@@ -55,59 +45,28 @@ readFakieConfig =
         ER.hoistEither $
           ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
 
-callApi :: (MonadIO m, MonadThrow m) => FakieItem -> m Value
-callApi fItem@FakieItem {..} = liftIO $ do
-  erequest <-
-    tryAny $
-      parseUrlThrow (show fakieItemMethod <> " " <> T.unpack fakieItemUrl)
-  case erequest of
-    Left err -> throwM (FakieException (show err))
-    Right request'' -> do
-      let request' =
-            setRequestQueryString (constructQueryParams fItem) $
-            setUpRequestHeaders request'' fItem
-          request = setUpRequestBody request' fItem
-      response <- httpJSONEither request
-      case getResponseBody response :: Either JSONException Value of
-        Left err -> throwM (FakieException (show err))
-        Right rBody -> do
-          when (getResponseStatusCode response /= 200) $
-            throwM (FakieException "Received non 200 status code!")
-          return rBody
-
-debugRequestContents :: MonadIO m => Request -> m ()
-debugRequestContents request = usingLoggerT logAction $ do
-  log D "Request"
-  log D "Host:"
-  log D (decodeUtf8 . host $ request)
-  log D "Port:"
-  log D (T.pack . show . port $ request)
-  log D "Method:"
-  log D (decodeUtf8 . method $ request)
-  log D "Path:"
-  log D (decodeUtf8 . path $ request)
-  log D "Query string:"
-  log D (decodeUtf8 . queryString $ request)
-  log D "Secure:"
-  log D (T.pack . show . secure $ request)
-  log D "Headers:"
-  log D (T.pack . show $ requestHeaders request)
-  let body' = requestBody request
-  case simplify body' of
-    Left (_, builder) -> do
-      log D "Body:"
-      log D (decodeUtf8 . BSL.toStrict $ toLazyByteString builder)
-      return ()
-    Right _ -> do
-      log D "No support for streaming request bodies for now"
-      return ()
-  where
-    logAction = cmap fmtMessage logTextStdout
-    simplify :: RequestBody -> Either (Int64, Builder) (Maybe Int64, GivesPopper ())
-    simplify (RequestBodyLBS lbs) = Left (BSL.length lbs, fromLazyByteString lbs)
-    simplify (RequestBodyBS bs) = Left (fromIntegral $ BS.length bs, fromByteString bs)
-    simplify (RequestBodyBuilder len b) = Left (len, b)
-    simplify _ = error "Not interested in streaming bodies right now"
+callApi :: (MonadIO m, MonadThrow m, MonadReader FakieEnv m) => FakieItem -> m Value
+callApi fItem@FakieItem {..} = do
+  FakieEnv {..} <- ask
+  liftIO $ do
+    fakieEnvLog "calling the apis"
+    erequest <-
+      tryAny $
+        parseUrlThrow (show fakieItemMethod <> " " <> T.unpack fakieItemUrl)
+    case erequest of
+      Left err -> throwM (FakieException (show err))
+      Right request'' -> do
+        let request' =
+              setRequestQueryString (constructQueryParams fItem) $
+              setUpRequestHeaders request'' fItem
+            request = setUpRequestBody request' fItem
+        response <- httpJSONEither request
+        case getResponseBody response :: Either JSONException Value of
+          Left err -> throwM (FakieException (show err))
+          Right rBody -> do
+            when (getResponseStatusCode response /= 200) $
+              throwM (FakieException "Received non 200 status code!")
+            return rBody
 
 setUpRequestBody :: Request -> FakieItem -> Request
 setUpRequestBody r FakieItem {..} =
@@ -123,12 +82,14 @@ setUpRequestHeaders r FakieItem {..} =
         ) <$> fakieItemHeaders
   in setRequestHeaders formattedHeaders r
 
+-- | Construct the 'Query' datatype from 'FakieQueryParams'. Basically a key value pairs.
 constructQueryParams :: FakieItem -> Query
 constructQueryParams FakieItem {..} =
   (\FakieQueryParam {..} ->
     (encodeUtf8 fakieQueryParamName,  Just (encodeUtf8 fakieQueryParamValue))
   ) <$> fakieItemQueryParams
 
+-- | Find the key inside of json Object or Array of Objects
 findValueKey :: Text -> Value -> Maybe Value
 findValueKey k (Object obj) = lookup k obj
 findValueKey k (Array arr) =
@@ -145,6 +106,9 @@ findValueKey k (Array arr) =
                 Just val -> Just val
 findValueKey _ _ = Nothing
 
+-- | Given a key, new value and already existing value put the new value under a provided key
+-- into a existing Object or Array.
+-- If the specified key already exists just return that value instead.
 createValueKey :: Text -> Value -> Value -> Value
 createValueKey key newValue userValue =
   case findValueKey key userValue of
@@ -161,17 +125,24 @@ createValueKey key newValue userValue =
     -- value with this key is already there, just return it
     Just _ -> userValue
 
+-- | Removes a value with specified keys from json Objects
 removeValueKey :: Text -> Value -> Value
 removeValueKey removeKey (Object o) = Object (delete removeKey o)
 removeValueKey removeKey _ =
   error $ "Trying to remove key " <> T.unpack removeKey <> " from value that does not have keys"
 
+-- | Special keys are used to mark that some json portions that don't have keys assigned to them.
+-- Later on we can choose to keep this data with shouldKeep flag.
+-- We can also drill further into this data using '.' (dot) similar to javascript objects
+-- or some special syntax like 'nth Number' TODO: implement nth functionality for Arrays
 specialKeys :: [Text]
 specialKeys = ["Array", "Object"]
 
+-- Go through each mapping in the configuration and map user keys to the api ones.
 assignUserKeys :: FakieItem -> Value -> MappingContext
 assignUserKeys FakieItem {..} apiValue =
   let mapping =
+        -- initialize the context with empty error string and one empty Object
         flip execState (MappingContext "" (Object empty)) $
           mapM
             (\FakieMap {..} ->
@@ -179,6 +150,7 @@ assignUserKeys FakieItem {..} apiValue =
               if fakieMapTheirkey `elem` specialKeys
                 then
                   case (fakieMapTheirkey, apiValue) of
+                    -- if the string Array matches the actual json Array type
                     ("Array", Array arr) -> do
                       context  <- get
                       let newValue =
@@ -189,6 +161,7 @@ assignUserKeys FakieItem {..} apiValue =
                              (mappingContextPossibleErrors mc)
                              newValue
                         )
+                    -- if the string Object matches the actual json Object type
                     ("Object", Object o) -> do
                       context  <- get
                       let newValue =
@@ -197,34 +170,45 @@ assignUserKeys FakieItem {..} apiValue =
                         (\mc ->
                            MappingContext (mappingContextPossibleErrors mc) newValue
                         )
+                    -- for all the other cases we will present the user with the error.
+                    -- If we decide to support some more special keys this is where they will go.
                     (specKey, _) ->
-                      modify' (\mc ->
-                                 MappingContext
-                                   (mappingContextPossibleErrors mc <> "Trying to use " <> specKey <> " as special key")
-                                   (mappingContextValue mc)
-                              )
+                      modify'
+                        (\mc ->
+                           MappingContext
+                             (mappingContextPossibleErrors mc <> "Trying to use " <> specKey <> " as special key")
+                             (mappingContextValue mc)
+                        )
                 else
+                  -- we are not using any special keys here. Try to find the api key inside of api results
                   case findValueKey fakieMapTheirkey apiValue of
                     Nothing ->
-                      modify' (\mc ->
-                                 MappingContext
-                                   (mappingContextPossibleErrors mc <> "Key " <> fakieMapTheirkey <> " not found!")
-                                   (mappingContextValue mc)
-                              )
+                      -- key was not found, alert the user about it
+                      modify'
+                        (\mc ->
+                           MappingContext
+                             (mappingContextPossibleErrors mc <> "Key " <> fakieMapTheirkey <> " not found!")
+                             (mappingContextValue mc)
+                        )
+                    -- we found the key, map it to our user json
                     Just foundVal -> do
                       context  <- get
-                      let newValue = createValueKey fakieMapOurkey foundVal (mappingContextValue context)
+                      let newValue =
+                            createValueKey fakieMapOurkey foundVal (mappingContextValue context)
                       modify'
                         (\mc ->
                            MappingContext (mappingContextPossibleErrors mc) newValue
                         )
             ) fakieItemMapping
+      -- filter our the keys we should remove from final json
       keysToRemove =
         fakieMapOurkey <$>
         filter
           (\FakieMap {..} ->
              fakieMapShouldKeep == Just False
           ) fakieItemMapping
+      -- when we finish with the mapping go through the results and remove the keys
+      -- marked for removal
       adjustedMapping =
         flip execState mapping $
           mapM

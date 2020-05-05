@@ -11,8 +11,8 @@ dependencies:
 - casing
 - case-insensitive
 - containers
-- co-log
 - directory
+- fast-logger
 - filepath
 - text
 - template-haskell

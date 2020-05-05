@@ -1,37 +1,60 @@
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
-import           Colog                    (pattern W, cmap, fmtMessage,
-                                               log,
-                                           logTextStdout,
-                                           usingLoggerT)
-import           Control.Concurrent.Async (mapConcurrently)
-import           Control.Exception.Safe   (SomeException)
-import           Control.Monad.Trans
-import qualified Data.Text                as T
-import           Fakie
 import           Common
+import           Control.Concurrent.Async (mapConcurrently)
+import           Control.Exception.Safe   (SomeException, tryAny, throwM)
+import           Control.Monad.Reader     (runReaderT)
+import           Control.Monad.Trans
+import           Fakie
+import           System.Log.FastLogger
+import           Types                    (FakieEnv (..), FakieException (..))
 
 main :: IO ()
-main = usingLoggerT logAction $ do
-  liftIO $ putStrLn "Fakie Api server started"
+main = do
+  let logFile = "/home/v0d1ch/code/fakie/.fakie.log"
+  logger <- initializeFileLogging logFile
+  liftIO $ do
+    putStrLn "Fakie Api"
+    putStrLn "reading configuration..."
   econfig <- readFakieConfig
   case econfig of
-    Left (err :: SomeException) -> do
-      log W (T.pack . show $ err)
-      liftIO $ putStrLn "Fakie config could not be obtained. More info is in the log files"
-    Right fakieConfig -> do
+    Left (_ :: SomeException) -> liftIO $ do
+      putStrLn "Configuration error!"
+      putStrLn "Fakie config could not be obtained."
+    Right fakieConfig -> liftIO $ do
+      putStrLn "Configuration looks good"
+      putStrLn "Calling configured endpoints to get the data..."
+
+      let fakieEnv =
+            FakieEnv
+              { fakieEnvLogFile = Just logFile
+              , fakieEnvLog = logFunction logger
+              }
       v <-
-        liftIO $
           mapConcurrently
-           (\cfg -> do
+           (\cfg -> flip runReaderT fakieEnv $ do
              apiResponse <- callApi cfg
              return $ assignUserKeys cfg apiResponse
            ) fakieConfig
-      liftIO $ pTraceShowM v
-      liftIO $ putStrLn "Fakie request done"
+      putStrLn "All calls are finished"
+      pTraceShowM v
+      putStrLn "Fakie done"
       return ()
-  where
-    logAction = cmap fmtMessage logTextStdout
+
+initializeFileLogging :: FilePath -> IO TimedFastLogger
+initializeFileLogging logFile = do
+  let fileLogSpec = FileLogSpec logFile 1000 1
+  timeFormat <- newTimeCache simpleTimeFormat
+  let logType = LogFile fileLogSpec defaultBufSize
+  eFastLogger <- tryAny $ newTimedFastLogger timeFormat logType
+  case eFastLogger of
+    Left err -> do
+      putStrLn (show err)
+      throwM (FakieException "Exiting... could not initialize the logger")
+    Right (logger, _) -> return logger
+
+logFunction :: TimedFastLogger -> LogStr -> IO ()
+logFunction logger msg = logger (\time -> toLogStr time <> " : " <> msg <> "\n")

@@ -5,6 +5,7 @@ module Types
   , FakieException (..)
   , FakieHeader (..)
   , FakieMap (..)
+  , FakieEnv (..)
   , Method (..)
   , MappingContext (..)
   , configFileName
@@ -16,6 +17,7 @@ import           Data.Aeson.TH
 import           Data.Text              (Text)
 import           Text.Casing            (camel)
 import           Common
+import           System.Log.FastLogger (LogStr)
 
 configFileName :: FilePath
 configFileName = ".fakie.json"
@@ -101,3 +103,9 @@ data MappingContext =
    { mappingContextPossibleErrors :: Text
    , mappingContextValue :: Value
    } deriving (Eq, Show)
+
+data FakieEnv =
+  FakieEnv
+    { fakieEnvLogFile :: Maybe FilePath
+    , fakieEnvLog :: LogStr -> IO ()
+    }

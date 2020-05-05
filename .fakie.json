@@ -27,7 +27,7 @@
       [
         { "ourkey" : "all",
           "theirkey" : "Array",
-          "shouldKeep": false
+          "shouldKeep": true
         },
         { "ourkey" : "all",
           "theirkey" : "title"
