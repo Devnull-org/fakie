@@ -90,10 +90,10 @@ constructQueryParams FakieItem {..} =
     (encodeUtf8 fakieQueryParamName,  Just (encodeUtf8 fakieQueryParamValue))
   ) <$> fakieItemQueryParams
 
--- | Find the key inside of json Object or Array of Objects
-findValueKey :: Text -> Value -> Maybe Value
-findValueKey k (Object obj) = lookup k obj
-findValueKey k (Array arr) =
+-- | Find the key inside of json Object or Array of Objects. Optionally we can search specific array index
+findValueKey :: Text -> Value -> Maybe arrayIndex -> Maybe Value
+findValueKey k (Object obj) _ = lookup k obj
+findValueKey k (Array arr) arrayIndex =
   go k arr 0
   where
     go k' arr' ind
@@ -102,17 +102,17 @@ findValueKey k (Array arr) =
           case arr' V.!? ind of
             Nothing -> Nothing
             Just v ->
-              case findValueKey k' v of
+              case findValueKey k' v arrayIndex of
                 Nothing  -> go k' arr' (ind + 1)
                 Just val -> Just val
-findValueKey _ _ = Nothing
+findValueKey _ _ _ = Nothing
 
 -- | Given a key, new value and already existing value put the new value under a provided key
 -- into a existing Object or Array.
 -- If the specified key already exists just return that value instead.
 createValueKey :: Text -> Value -> Value -> Value
 createValueKey key newValue userValue =
-  case findValueKey key userValue of
+  case findValueKey key userValue Nothing of
     -- ok it is safe to insert new value
     Nothing ->
       case userValue of
@@ -185,7 +185,7 @@ assignUserKeys FakieItem {..} apiValue =
                     if | "." `T.isInfixOf` fakieMapTheirkey -> mapDotKeys fm
                        | otherwise ->
                            -- Try to find the api key inside of api results
-                           case findValueKey fakieMapTheirkey apiValue of
+                           case findValueKey fakieMapTheirkey apiValue Nothing of
                              Nothing -> noteKeyError fakieMapTheirkey
                              -- we found the key, map it to our user json
                              Just foundVal -> do
@@ -252,11 +252,11 @@ assignUserKeys FakieItem {..} apiValue =
            (Just alreadyMappedArrayOrObjectWithSpecialKey, Just pathToLookFor) ->
              let ourMappedValue = mappingContextValue context
              in
-               case findValueKey alreadyMappedArrayOrObjectWithSpecialKey ourMappedValue of
+               case findValueKey alreadyMappedArrayOrObjectWithSpecialKey ourMappedValue Nothing of
                  Nothing -> noteKeyError alreadyMappedArrayOrObjectWithSpecialKey
                   -- we found the value, now drill into it with path contained after the dot
                  Just foundValue ->
-                   case findValueKey pathToLookFor foundValue of
+                   case findValueKey pathToLookFor foundValue Nothing of
                      Nothing -> noteKeyError pathToLookFor
                      Just val ->
                        let newValue =
