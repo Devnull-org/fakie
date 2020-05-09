@@ -1,13 +1,12 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NoImplicitPrelude          #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PatternSynonyms            #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE MultiWayIf        #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Fakie where
 
@@ -22,7 +21,9 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy   as BSL
 import qualified Data.CaseInsensitive   as CI
 import           Data.HashMap.Strict    (delete, empty, insert, lookup)
+import           Data.List              (tail, take)
 import           Data.Maybe             (isNothing)
+import           Data.Monoid            (mconcat)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           Data.Text.Encoding     (encodeUtf8)
@@ -145,60 +146,56 @@ assignUserKeys FakieItem {..} apiValue =
         -- initialize the context with empty error string and one empty Object
         flip execState (MappingContext "" (Object empty)) $
           mapM
-            (\FakieMap {..} ->
+            (\fm@FakieMap {..} ->
               -- we are using the special keys to access data
-              if fakieMapTheirkey `elem` specialKeys
-                then
-                  case (fakieMapTheirkey, apiValue) of
-                    -- if the string Array matches the actual json Array type
-                    ("Array", Array arr) -> do
-                      context  <- get
-                      let newValue =
-                            createValueKey fakieMapOurkey (Array arr) (mappingContextValue context)
-                      modify'
-                        (\mc ->
-                           MappingContext
-                             (mappingContextPossibleErrors mc)
-                             newValue
-                        )
-                    -- if the string Object matches the actual json Object type
-                    ("Object", Object o) -> do
-                      context  <- get
-                      let newValue =
-                            createValueKey fakieMapOurkey (Object o) (mappingContextValue context)
-                      modify'
-                        (\mc ->
-                           MappingContext (mappingContextPossibleErrors mc) newValue
-                        )
-                    -- for all the other cases we will present the user with the error.
-                    -- If we decide to support some more special keys this is where they will go.
-                    (specKey, _) ->
-                      modify'
-                        (\mc ->
-                           MappingContext
-                             (mappingContextPossibleErrors mc <> "Trying to use " <> specKey <> " as special key")
-                             (mappingContextValue mc)
-                        )
-                else
-                  -- we are not using any special keys here. Try to find the api key inside of api results
-                  case findValueKey fakieMapTheirkey apiValue of
-                    Nothing ->
-                      -- key was not found, alert the user about it
-                      modify'
-                        (\mc ->
-                           MappingContext
-                             (mappingContextPossibleErrors mc <> "Key " <> fakieMapTheirkey <> " not found!")
-                             (mappingContextValue mc)
-                        )
-                    -- we found the key, map it to our user json
-                    Just foundVal -> do
-                      context  <- get
-                      let newValue =
-                            createValueKey fakieMapOurkey foundVal (mappingContextValue context)
-                      modify'
-                        (\mc ->
-                           MappingContext (mappingContextPossibleErrors mc) newValue
-                        )
+              if | fakieMapTheirkey `elem` specialKeys ->
+                     case (fakieMapTheirkey, apiValue) of
+                       -- if the string Array matches the actual json Array type
+                       ("Array", Array arr) -> do
+                         context  <- get
+                         let newValue =
+                               createValueKey fakieMapOurkey (Array arr) (mappingContextValue context)
+                         modify'
+                           (\mc ->
+                              MappingContext
+                                (mappingContextPossibleErrors mc)
+                                newValue
+                           )
+                       -- if the string Object matches the actual json Object type
+                       ("Object", Object o) -> do
+                         context  <- get
+                         let newValue =
+                               createValueKey fakieMapOurkey (Object o) (mappingContextValue context)
+                         modify'
+                           (\mc ->
+                              MappingContext (mappingContextPossibleErrors mc) newValue
+                           )
+                       -- for all the other cases we will present the user with the error.
+                       -- If we decide to support some more special keys this is where they will go.
+                       (specKey, _) ->
+                         modify'
+                           (\mc ->
+                              MappingContext
+                                (mappingContextPossibleErrors mc <> "Trying to use " <> specKey <> " as special key")
+                                (mappingContextValue mc)
+                           )
+                 | otherwise ->
+                    -- we are not using any special keys here.
+                    -- we allow users to use dot notation like in js objects to look for a key inside of object
+                    if | "." `T.isInfixOf` fakieMapTheirkey -> mapDotKeys fm
+                       | otherwise ->
+                           -- Try to find the api key inside of api results
+                           case findValueKey fakieMapTheirkey apiValue of
+                             Nothing -> noteKeyError fakieMapTheirkey
+                             -- we found the key, map it to our user json
+                             Just foundVal -> do
+                               context  <- get
+                               let newValue =
+                                     createValueKey fakieMapOurkey foundVal (mappingContextValue context)
+                               modify'
+                                 (\mc ->
+                                    MappingContext (mappingContextPossibleErrors mc) newValue
+                                 )
             ) fakieItemMapping
       -- filter our the keys we should remove from final json
       keysToRemove =
@@ -222,3 +219,51 @@ assignUserKeys FakieItem {..} apiValue =
             ) keysToRemove
   in
     adjustedMapping
+  where
+    -- key was not found, alert the user about it
+    noteKeyError :: Text -> State MappingContext ()
+    noteKeyError notFoundKey =
+      modify'
+        (\mc ->
+           MappingContext
+             (mappingContextPossibleErrors mc <> "Key " <> notFoundKey <> " not found!")
+             (mappingContextValue mc)
+        )
+
+    noteError :: Text -> State MappingContext ()
+    noteError generalError =
+      modify'
+        (\mc ->
+           MappingContext
+             (mappingContextPossibleErrors mc <> generalError <> " not found!")
+             (mappingContextValue mc)
+        )
+    -- map the keys containing "." (dot) accessors
+    mapDotKeys :: FakieMap -> State MappingContext ()
+    mapDotKeys FakieMap {..} = do
+      let path = T.splitOn "." fakieMapTheirkey
+      case take 2 path of
+        [] -> noteKeyError fakieMapTheirkey
+        _ -> do
+         context <- get
+         let mAlreadyMappedArrayOrObjectWithSpecialKey = ER.headMay path
+             mPathToLookFor = ER.headMay (tail path)
+         case (mAlreadyMappedArrayOrObjectWithSpecialKey, mPathToLookFor) of
+           (Just alreadyMappedArrayOrObjectWithSpecialKey, Just pathToLookFor) ->
+             let ourMappedValue = mappingContextValue context
+             in
+               case findValueKey alreadyMappedArrayOrObjectWithSpecialKey ourMappedValue of
+                 Nothing -> noteKeyError alreadyMappedArrayOrObjectWithSpecialKey
+                  -- we found the value, now drill into it with path contained after the dot
+                 Just foundValue ->
+                   case findValueKey pathToLookFor foundValue of
+                     Nothing -> noteKeyError pathToLookFor
+                     Just val ->
+                       let newValue =
+                              createValueKey fakieMapOurkey val ourMappedValue
+                       in
+                         modify'
+                           (\mc ->
+                              MappingContext (mappingContextPossibleErrors mc) newValue
+                           )
+           (_,_) -> noteKeyError (mconcat path)

@@ -33,6 +33,7 @@ module Common
   , flip
   , evalState
   , evalStateT
+  , State
   , execState
   , execStateT
   , modify'
@@ -47,12 +48,12 @@ module Common
   ) where
 
 
-import           Control.Monad.State (evalState, evalStateT, execState,
+import           Control.Monad.State (State, evalState, evalStateT, execState,
                                       execStateT, get, modify', put)
 import           Control.Monad.Trans (lift)
 import           Data.Bool           (bool)
+import           Data.List           (filter)
 import           Data.Maybe
-import           Data.List (filter)
 import           Debug.Pretty.Simple (pTraceShow, pTraceShowM)
 import           Prelude             (Bool (..), Either (..), Eq, FilePath, IO,
                                       Maybe (..), Show (..), String, concat,

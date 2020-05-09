@@ -29,8 +29,8 @@
           "theirkey" : "Array",
           "shouldKeep": true
         },
-        { "ourkey" : "all",
-          "theirkey" : "title"
+        { "ourkey" : "ourtitle",
+          "theirkey" : "all.title"
         },
         { "ourkey" : "janakida",
           "theirkey" : "body"

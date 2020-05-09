@@ -52,7 +52,7 @@ initializeFileLogging logFile = do
   eFastLogger <- tryAny $ newTimedFastLogger timeFormat logType
   case eFastLogger of
     Left err -> do
-      putStrLn (show err)
+      print err
       throwM (FakieException "Exiting... could not initialize the logger")
     Right (logger, _) -> return logger
 
