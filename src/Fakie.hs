@@ -21,9 +21,8 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy   as BSL
 import qualified Data.CaseInsensitive   as CI
 import           Data.HashMap.Strict    (delete, empty, insert, lookup)
-import           Data.List              (tail, take)
+import           Data.List              (tail)
 import           Data.Maybe             (isNothing)
-import           Data.Monoid            (mconcat)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           Data.Text.Encoding     (encodeUtf8)
@@ -46,7 +45,13 @@ readFakieConfig =
         ER.hoistEither $
           ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
 
-callApi :: (MonadIO m, MonadThrow m, MonadReader FakieEnv m) => FakieItem -> m Value
+callApi
+  :: ( MonadIO m
+     , MonadThrow m
+     , MonadReader FakieEnv m
+     )
+  => FakieItem
+  -> m Value
 callApi fItem@FakieItem {..} = do
   FakieEnv {..} <- ask
   liftIO $ do
@@ -90,11 +95,21 @@ constructQueryParams FakieItem {..} =
     (encodeUtf8 fakieQueryParamName,  Just (encodeUtf8 fakieQueryParamValue))
   ) <$> fakieItemQueryParams
 
--- | Find the key inside of json Object or Array of Objects. Optionally we can search specific array index
+-- | Find the key inside of json Object or Array of Objects.
+-- TODO: Optionally we can search specific array index
 findValueKey :: Text -> Value -> Maybe arrayIndex -> Maybe Value
-findValueKey k (Object obj) _ = lookup k obj
+findValueKey k (Object obj) _ =
+  if | k `elem` specialKeys ->
+       case k of
+         "Object" -> Just (Object obj)
+         _ -> Nothing
+     | otherwise -> lookup k obj
 findValueKey k (Array arr) arrayIndex =
-  go k arr 0
+  if | k `elem` specialKeys ->
+       case k of
+         "Array" -> Just (Array arr)
+         _ -> Nothing
+     | otherwise -> go k arr 0
   where
     go k' arr' ind
       | isNothing (arr' V.!? ind) = Nothing
@@ -152,7 +167,7 @@ assignUserKeys FakieItem {..} apiValue =
                      case (fakieMapTheirkey, apiValue) of
                        -- if the string Array matches the actual json Array type
                        ("Array", Array arr) -> do
-                         context  <- get
+                         context <- get
                          let newValue =
                                createValueKey fakieMapOurkey (Array arr) (mappingContextValue context)
                          modify'
@@ -220,50 +235,48 @@ assignUserKeys FakieItem {..} apiValue =
   in
     adjustedMapping
   where
-    -- key was not found, alert the user about it
-    noteKeyError :: Text -> State MappingContext ()
-    noteKeyError notFoundKey =
+    -- | Map the keys containing "." (dot) accessors
+    mapDotKeys :: FakieMap -> State MappingContext ()
+    mapDotKeys fm@FakieMap {..} = do
+      let path = T.splitOn "." fakieMapTheirkey
+      case path of
+        []            -> noteKeyError fakieMapTheirkey
+        pathToDrillIn -> findDottedPath fm pathToDrillIn
+
+-- | Key was not found, alert the user about it
+noteKeyError :: Text -> State MappingContext ()
+noteKeyError notFoundKey =
+  modify'
+    (\mc ->
+       MappingContext
+         (mappingContextPossibleErrors mc <> "Key " <> notFoundKey <> " not found!")
+         (mappingContextValue mc)
+    )
+
+-- | Find the path that uses dot notation to drill into the data
+findDottedPath :: FakieMap -> [Text] -> State MappingContext ()
+findDottedPath FakieMap {..} path = do
+  context <- get
+  let ourMappedValue = mappingContextValue context
+      eFoundValue = findPathRecusive ourMappedValue path
+  case eFoundValue of
+    Left keyNotFound -> noteKeyError keyNotFound
+    Right foundVal -> do
+      let newValue =
+            createValueKey fakieMapOurkey foundVal ourMappedValue
       modify'
         (\mc ->
-           MappingContext
-             (mappingContextPossibleErrors mc <> "Key " <> notFoundKey <> " not found!")
-             (mappingContextValue mc)
+           MappingContext (mappingContextPossibleErrors mc) newValue
         )
 
-    noteError :: Text -> State MappingContext ()
-    noteError generalError =
-      modify'
-        (\mc ->
-           MappingContext
-             (mappingContextPossibleErrors mc <> generalError <> " not found!")
-             (mappingContextValue mc)
-        )
-    -- map the keys containing "." (dot) accessors
-    mapDotKeys :: FakieMap -> State MappingContext ()
-    mapDotKeys FakieMap {..} = do
-      let path = T.splitOn "." fakieMapTheirkey
-      case take 2 path of
-        [] -> noteKeyError fakieMapTheirkey
-        _ -> do
-         context <- get
-         let mAlreadyMappedArrayOrObjectWithSpecialKey = ER.headMay path
-             mPathToLookFor = ER.headMay (tail path)
-         case (mAlreadyMappedArrayOrObjectWithSpecialKey, mPathToLookFor) of
-           (Just alreadyMappedArrayOrObjectWithSpecialKey, Just pathToLookFor) ->
-             let ourMappedValue = mappingContextValue context
-             in
-               case findValueKey alreadyMappedArrayOrObjectWithSpecialKey ourMappedValue Nothing of
-                 Nothing -> noteKeyError alreadyMappedArrayOrObjectWithSpecialKey
-                  -- we found the value, now drill into it with path contained after the dot
-                 Just foundValue ->
-                   case findValueKey pathToLookFor foundValue Nothing of
-                     Nothing -> noteKeyError pathToLookFor
-                     Just val ->
-                       let newValue =
-                              createValueKey fakieMapOurkey val ourMappedValue
-                       in
-                         modify'
-                           (\mc ->
-                              MappingContext (mappingContextPossibleErrors mc) newValue
-                           )
-           (_,_) -> noteKeyError (mconcat path)
+-- | Recurse using the dotted keys with posibility of failure
+findPathRecusive :: Value -> [Text] -> Either Text Value
+findPathRecusive currentValue currentPath
+  | isNothing (ER.headMay currentPath) = Right currentValue
+  | otherwise =
+      case ER.headMay currentPath of
+        Nothing -> Left "empty key"
+        Just pathSegment ->
+            case findValueKey pathSegment currentValue Nothing of
+              Nothing -> Left pathSegment
+              Just val -> findPathRecusive val (tail currentPath)

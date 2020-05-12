@@ -6,10 +6,6 @@
     "url" : "https://jsonplaceholder.typicode.com/posts",
     "queryParams":
       [
-       {
-         "name" : "userId",
-         "value" : "1"
-       }
       ],
     "headers":
       [
@@ -27,10 +23,10 @@
       [
         { "ourkey" : "all",
           "theirkey" : "Array",
-          "shouldKeep": true
+          "shouldKeep": false
         },
         { "ourkey" : "ourtitle",
-          "theirkey" : "all.title"
+          "theirkey" : "all.userId"
         },
         { "ourkey" : "janakida",
           "theirkey" : "body"
