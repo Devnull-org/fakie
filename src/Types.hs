@@ -109,3 +109,4 @@ data FakieEnv =
     { fakieEnvLogFile :: Maybe FilePath
     , fakieEnvLog :: LogStr -> IO ()
     }
+

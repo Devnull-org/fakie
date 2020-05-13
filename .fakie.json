@@ -26,7 +26,7 @@
           "shouldKeep": false
         },
         { "ourkey" : "ourtitle",
-          "theirkey" : "all.userId"
+          "theirkey" : "all.nth-3"
         },
         { "ourkey" : "janakida",
           "theirkey" : "body"

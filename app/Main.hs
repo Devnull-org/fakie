@@ -5,7 +5,7 @@ module Main where
 
 import           Common
 import           Control.Concurrent.Async (mapConcurrently)
-import           Control.Exception.Safe   (SomeException, tryAny, throwM)
+import           Control.Exception.Safe   (SomeException, throwM, tryAny)
 import           Control.Monad.Reader     (runReaderT)
 import           Control.Monad.Trans
 import           Fakie
@@ -24,6 +24,7 @@ main = do
     Left (_ :: SomeException) -> liftIO $ do
       putStrLn "Configuration error!"
       putStrLn "Fakie config could not be obtained."
+      throwM (FakieException "failure")
     Right fakieConfig -> liftIO $ do
       putStrLn "Configuration looks good"
       putStrLn "Calling configured endpoints to get the data..."

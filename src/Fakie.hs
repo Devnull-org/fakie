@@ -66,6 +66,12 @@ callApi fItem@FakieItem {..} = do
               setRequestQueryString (constructQueryParams fItem) $
               setUpRequestHeaders request'' fItem
             request = setUpRequestBody request' fItem
+
+        -- ebody <- BSL.readFile "/home/v0d1ch/code/fakie/src/json/Posts.json"
+        -- case eitherDecode ebody :: Either String Value of
+        --   Left err ->
+        --     throwM (FakieException $ show err)
+        --   Right body -> return body
         response <- httpJSONEither request
         case getResponseBody response :: Either JSONException Value of
           Left err -> throwM (FakieException (show err))
@@ -99,16 +105,22 @@ constructQueryParams FakieItem {..} =
 -- TODO: Optionally we can search specific array index
 findValueKey :: Text -> Value -> Maybe arrayIndex -> Maybe Value
 findValueKey k (Object obj) _ =
-  if | k `elem` specialKeys ->
+  if | hasSpecialKeys k ->
        case k of
          "Object" -> Just (Object obj)
-         _ -> Nothing
+         _        -> Nothing
      | otherwise -> lookup k obj
 findValueKey k (Array arr) arrayIndex =
-  if | k `elem` specialKeys ->
+  if | hasSpecialKeys k ->
        case k of
          "Array" -> Just (Array arr)
-         _ -> Nothing
+         _ ->
+          case getNth k of
+            Nothing -> Nothing
+            Just arrIndex ->
+              case arr V.!? arrIndex of
+                Nothing -> Nothing
+                Just v -> Just v
      | otherwise -> go k arr 0
   where
     go k' arr' ind
@@ -121,6 +133,22 @@ findValueKey k (Array arr) arrayIndex =
                 Nothing  -> go k' arr' (ind + 1)
                 Just val -> Just val
 findValueKey _ _ _ = Nothing
+
+hasSpecialKeys :: Text -> Bool
+hasSpecialKeys key
+  | key `elem` specialKeys = True
+  | "nth" == fst (T.breakOn "-" key) = True
+  | otherwise = False
+  where
+    specialKeys :: [Text]
+    specialKeys = ["Array", "Object"]
+
+getNth :: Text -> Maybe Int
+getNth key = do
+  let nthElements = T.breakOn "-" key
+  if fst nthElements == "nth"
+    then readMaybe . T.unpack $ T.replace "-" "" (snd nthElements)
+    else Nothing
 
 -- | Given a key, new value and already existing value put the new value under a provided key
 -- into a existing Object or Array.
@@ -151,8 +179,6 @@ removeValueKey removeKey _ =
 -- Later on we can choose to keep this data with shouldKeep flag.
 -- We can also drill further into this data using '.' (dot) similar to javascript objects
 -- or some special syntax like 'nth Number' TODO: implement nth functionality for Arrays
-specialKeys :: [Text]
-specialKeys = ["Array", "Object"]
 
 -- Go through each mapping in the configuration and map user keys to the api ones.
 assignUserKeys :: FakieItem -> Value -> MappingContext
@@ -163,7 +189,7 @@ assignUserKeys FakieItem {..} apiValue =
           mapM
             (\fm@FakieMap {..} ->
               -- we are using the special keys to access data
-              if | fakieMapTheirkey `elem` specialKeys ->
+              if | hasSpecialKeys fakieMapTheirkey ->
                      case (fakieMapTheirkey, apiValue) of
                        -- if the string Array matches the actual json Array type
                        ("Array", Array arr) -> do
@@ -185,6 +211,35 @@ assignUserKeys FakieItem {..} apiValue =
                            (\mc ->
                               MappingContext (mappingContextPossibleErrors mc) newValue
                            )
+                       (nthMaybe, Array arr) ->
+                        case getNth nthMaybe of
+                          Nothing ->
+                            modify'
+                              (\mc ->
+                                 MappingContext
+                                   (mappingContextPossibleErrors mc <> "Trying to use " <> nthMaybe <> " as special key")
+                                   (mappingContextValue mc)
+                              )
+                          Just arrayIndex ->
+                            case arr V.!? arrayIndex of
+                              Nothing ->
+                                modify'
+                                  (\mc ->
+                                     MappingContext
+                                       (mappingContextPossibleErrors mc <> "Could not find array index " <> T.pack (show arrayIndex))
+                                       (mappingContextValue mc)
+                                  )
+                              Just arrValue -> do
+                                context <- get
+                                let newValue =
+                                      createValueKey fakieMapOurkey arrValue (mappingContextValue context)
+                                modify'
+                                  (\mc ->
+                                     MappingContext
+                                       (mappingContextPossibleErrors mc)
+                                       newValue
+                                  )
+
                        -- for all the other cases we will present the user with the error.
                        -- If we decide to support some more special keys this is where they will go.
                        (specKey, _) ->
@@ -194,6 +249,7 @@ assignUserKeys FakieItem {..} apiValue =
                                 (mappingContextPossibleErrors mc <> "Trying to use " <> specKey <> " as special key")
                                 (mappingContextValue mc)
                            )
+
                  | otherwise ->
                     -- we are not using any special keys here.
                     -- we allow users to use dot notation like in js objects to look for a key inside of object
@@ -278,5 +334,5 @@ findPathRecusive currentValue currentPath
         Nothing -> Left "empty key"
         Just pathSegment ->
             case findValueKey pathSegment currentValue Nothing of
-              Nothing -> Left pathSegment
+              Nothing  -> Left pathSegment
               Just val -> findPathRecusive val (tail currentPath)
