@@ -8,7 +8,7 @@ import           Control.Concurrent.Async (mapConcurrently)
 import           Control.Exception.Safe   (SomeException, throwM, tryAny)
 import           Control.Monad.Reader     (runReaderT)
 import           Control.Monad.Trans
-import           Fakie
+import           Mapping
 import           System.Log.FastLogger
 import           Types                    (FakieEnv (..), FakieException (..))
 
@@ -19,21 +19,25 @@ main = do
   liftIO $ do
     putStrLn "Fakie Api"
     putStrLn "reading configuration..."
-  econfig <- readFakieConfig
+  let fakieEnv =
+        FakieEnv
+          { fakieEnvLogFile = Just logFile
+          , fakieEnvLog = logFunction logger
+          , fakieEnvTesting = True
+          }
+  econfig <- runReaderT readFakieConfig fakieEnv
   case econfig of
-    Left (_ :: SomeException) -> liftIO $ do
+    Left (e :: SomeException) -> do
       putStrLn "Configuration error!"
       putStrLn "Fakie config could not be obtained."
+      putStrLn "Please check the log file to see what went wrong"
+      let logIt = logFunction logger . toLogStr
+      logIt ("Configuration error : " <> show e)
       throwM (FakieException "failure")
-    Right fakieConfig -> liftIO $ do
+    Right fakieConfig -> do
       putStrLn "Configuration looks good"
       putStrLn "Calling configured endpoints to get the data..."
 
-      let fakieEnv =
-            FakieEnv
-              { fakieEnvLogFile = Just logFile
-              , fakieEnvLog = logFunction logger
-              }
       v <-
           mapConcurrently
            (\cfg -> flip runReaderT fakieEnv $ do

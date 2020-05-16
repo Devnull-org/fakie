@@ -107,6 +107,7 @@ data MappingContext =
 data FakieEnv =
   FakieEnv
     { fakieEnvLogFile :: Maybe FilePath
-    , fakieEnvLog :: LogStr -> IO ()
+    , fakieEnvLog     :: LogStr -> IO ()
+    , fakieEnvTesting :: Bool
     }
 

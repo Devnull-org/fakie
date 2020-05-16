@@ -8,7 +8,7 @@
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Fakie where
+module Mapping where
 
 import           Common
 import qualified Control.Error          as ER
@@ -33,13 +33,20 @@ import           System.Directory       (getCurrentDirectory, listDirectory)
 import           System.FilePath        ((</>))
 import           Types
 
-readFakieConfig :: (MonadIO m, MonadThrow m) => m (Either SomeException Fakie)
+readFakieConfig
+  :: ( MonadIO m
+     , MonadThrow m
+     , MonadReader FakieEnv m)
+  => m (Either SomeException Fakie)
 readFakieConfig =
   ER.runExceptT $ do
+    FakieEnv {..} <- lift ask
     cwd <- ER.ExceptT $ liftIO (tryAny getCurrentDirectory)
     fileList <- ER.ExceptT $ liftIO (tryAny $ listDirectory cwd)
     if configFileName `notElem` fileList
-      then throwM (FakieException "No config file detected")
+      then do
+      liftIO $ fakieEnvLog "No config file detected! We expect to see configuration inside of .fakie.json file."
+      throwM (FakieException "No config file detected! Check the log file for errors.")
       else do
         fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> configFileName)
         ER.hoistEither $
@@ -54,31 +61,30 @@ callApi
   -> m Value
 callApi fItem@FakieItem {..} = do
   FakieEnv {..} <- ask
-  liftIO $ do
-    fakieEnvLog "calling the apis"
-    erequest <-
-      tryAny $
-        parseUrlThrow (show fakieItemMethod <> " " <> T.unpack fakieItemUrl)
-    case erequest of
-      Left err -> throwM (FakieException (show err))
-      Right request'' -> do
-        let request' =
-              setRequestQueryString (constructQueryParams fItem) $
-              setUpRequestHeaders request'' fItem
-            request = setUpRequestBody request' fItem
-
+  if | fakieEnvTesting -> liftIO $ do
         ebody <- BSL.readFile "/home/v0d1ch/code/fakie/src/json/Posts.json"
         case eitherDecode ebody :: Either String Value of
           Left err ->
             throwM (FakieException $ show err)
           Right body -> return body
-        -- response <- httpJSONEither request
-        -- case getResponseBody response :: Either JSONException Value of
-        --   Left err -> throwM (FakieException (show err))
-        --   Right rBody -> do
-        --     when (getResponseStatusCode response /= 200) $
-        --       throwM (FakieException "Received non 200 status code!")
-        --     return rBody
+     | otherwise -> liftIO $ do
+         erequest <-
+           tryAny $
+             parseUrlThrow (show fakieItemMethod <> " " <> T.unpack fakieItemUrl)
+         case erequest of
+           Left err -> throwM (FakieException (show err))
+           Right request'' -> do
+             let request' =
+                   setRequestQueryString (constructQueryParams fItem) $
+                   setUpRequestHeaders request'' fItem
+                 request = setUpRequestBody request' fItem
+             response <- httpJSONEither request
+             case getResponseBody response :: Either JSONException Value of
+               Left err -> throwM (FakieException (show err))
+               Right rBody -> do
+                 when (getResponseStatusCode response /= 200) $
+                   throwM (FakieException "Received non 200 status code!")
+                 return rBody
 
 setUpRequestBody :: Request -> FakieItem -> Request
 setUpRequestBody r FakieItem {..} =
@@ -98,11 +104,11 @@ setUpRequestHeaders r FakieItem {..} =
 constructQueryParams :: FakieItem -> Query
 constructQueryParams FakieItem {..} =
   (\FakieQueryParam {..} ->
-    (encodeUtf8 fakieQueryParamName,  Just (encodeUtf8 fakieQueryParamValue))
+    (encodeUtf8 fakieQueryParamName, Just (encodeUtf8 fakieQueryParamValue))
   ) <$> fakieItemQueryParams
 
--- | Find the key inside of json Object or Array of Objects.
--- TODO: Optionally we can search specific array index
+-- | Find the key inside of json Object or Array.
+-- Optionally we can search specific array index
 findValueKey :: Text -> Value -> Maybe arrayIndex -> Maybe Value
 findValueKey k (Object obj) _ =
   if | hasSpecialKeys k ->
@@ -114,24 +120,16 @@ findValueKey k (Array arr) arrayIndex =
   if | hasSpecialKeys k ->
        case k of
          "Array" -> Just (Array arr)
-         _ ->
-          case getNth k of
-            Nothing -> Nothing
-            Just arrIndex ->
-              case arr V.!? arrIndex of
-                Nothing -> Nothing
-                Just v -> Just v
+         -- if there is a nth key try to find array value at that index
+         _ -> (V.!?) arr =<< getNth k
      | otherwise -> go k arr 0
   where
-    go k' arr' ind
-      | isNothing (arr' V.!? ind) = Nothing
-      | otherwise =
-          case arr' V.!? ind of
-            Nothing -> Nothing
-            Just v ->
-              case findValueKey k' v arrayIndex of
-                Nothing  -> go k' arr' (ind + 1)
-                Just val -> Just val
+    go :: Text -> V.Vector Value -> Int -> Maybe Value
+    go k' arr' ind = do
+      arrayValue <- arr' V.!? ind
+      case findValueKey k' arrayValue arrayIndex of
+        Nothing  -> go k' arr' (ind + 1)
+        Just val -> Just val
 findValueKey _ _ _ = Nothing
 
 hasSpecialKeys :: Text -> Bool
@@ -143,6 +141,8 @@ hasSpecialKeys key
     specialKeys :: [Text]
     specialKeys = ["Array", "Object"]
 
+-- | Tries to find special key 'nth-' that denotes we want to extract specific array key.
+-- If nth key exists then we want to try to extract the actuall array index to look for data.
 getNth :: Text -> Maybe Int
 getNth key = do
   let nthElements = T.breakOn "-" key
@@ -225,14 +225,14 @@ assignUserKeys FakieItem {..} apiValue =
             ) keysToRemove
   in
     adjustedMapping
-  where
-    -- | Map the keys containing "." (dot) accessors
-    mapDotKeys :: FakieMap -> State MappingContext ()
-    mapDotKeys fm@FakieMap {..} = do
-      let path = T.splitOn "." fakieMapTheirkey
-      case path of
-        []            -> noteKeyError fakieMapTheirkey
-        pathToDrillIn -> findDottedPath fm pathToDrillIn
+
+-- | Map the keys containing "." (dot) accessors
+mapDotKeys :: FakieMap -> State MappingContext ()
+mapDotKeys fm@FakieMap {..} = do
+  let path = T.splitOn "." fakieMapTheirkey
+  case path of
+    []            -> noteKeyError fakieMapTheirkey
+    pathToDrillIn -> findDottedPath fm pathToDrillIn
 
 -- | Key was not found, alert the user about it
 noteKeyError :: Text -> State MappingContext ()
@@ -268,6 +268,6 @@ findPathRecusive currentValue currentPath
       case ER.headMay currentPath of
         Nothing -> Left "empty key"
         Just pathSegment ->
-            case findValueKey pathSegment currentValue Nothing of
-              Nothing  -> Left pathSegment
-              Just val -> findPathRecusive val (tail currentPath)
+          case findValueKey pathSegment currentValue Nothing of
+            Nothing  -> Left pathSegment
+            Just val -> findPathRecusive val (tail currentPath)
