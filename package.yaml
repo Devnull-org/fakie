@@ -26,6 +26,7 @@ dependencies:
 - vector
 - safe-exceptions
 - errors
+- optparse-applicative
 - pretty-simple
 - mtl
 - lens

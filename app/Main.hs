@@ -9,11 +9,28 @@ import           Control.Exception.Safe   (SomeException, throwM, tryAny)
 import           Control.Monad.Reader     (runReaderT)
 import           Control.Monad.Trans
 import           Mapping
+import           Options.Applicative
 import           System.Log.FastLogger
 import           Types                    (FakieEnv (..), FakieException (..))
 
+newtype CmdOptions = CmdOptions
+  { storeToFile :: Maybe FilePath
+  }
+
+options :: Parser CmdOptions
+options =
+  CmdOptions
+    <$> optional
+         (strOption
+          ( long "store-to-file"
+           <> short 'f'
+           <> help "If you don't want to run the server you can get all of the API json data in a file"
+          )
+        )
+
 main :: IO ()
 main = do
+  _cmdOptions <- execParser opts
   let logFile = "/home/v0d1ch/code/fakie/.fakie.log"
   logger <- initializeFileLogging logFile
   liftIO $ do
@@ -48,6 +65,11 @@ main = do
       pTraceShowM v
       putStrLn "Fakie done"
       return ()
+  where
+    opts = info (options <**> helper)
+      ( fullDesc
+     <> progDesc "Fakie - merge multiple API endpoints into results you control."
+     <> header "Fakie - The ultimate API glue!" )
 
 initializeFileLogging :: FilePath -> IO TimedFastLogger
 initializeFileLogging logFile = do
