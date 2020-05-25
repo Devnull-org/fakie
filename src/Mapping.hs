@@ -45,7 +45,8 @@ readFakieConfig =
     fileList <- ER.ExceptT $ liftIO (tryAny $ listDirectory cwd)
     if configFileName `notElem` fileList
       then do
-      liftIO $ fakieEnvLog "No config file detected! We expect to see configuration inside of .fakie.json file."
+      liftIO $
+        putStrLn "No config file detected! We expect to see configuration inside of .fakie.json file."
       throwM (FakieException "No config file detected! Check the log file for errors.")
       else do
         fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> configFileName)

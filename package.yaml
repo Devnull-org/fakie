@@ -27,6 +27,7 @@ dependencies:
 - safe-exceptions
 - errors
 - optparse-applicative
+- network-uri
 - pretty-simple
 - mtl
 - lens
@@ -34,6 +35,7 @@ dependencies:
 - warp
 - wai
 - wai-extra
+- wai-util
 - yaml
 
 default-extensions:

@@ -8,6 +8,8 @@ module Types
   , FakieEnv (..)
   , Method (..)
   , MappingContext (..)
+  , ServerOptions (..)
+  , CmdOptions (..)
   , configFileName
   ) where
 
@@ -17,10 +19,11 @@ import           Data.Aeson.TH
 import           Data.Text              (Text)
 import           Text.Casing            (camel)
 import           Common
-import           System.Log.FastLogger (LogStr)
+import           Network.Wai.Handler.Warp (Port)
 
 configFileName :: FilePath
 configFileName = ".fakie.json"
+
 
 newtype FakieException = FakieException String deriving (Show, Eq)
 
@@ -107,7 +110,15 @@ data MappingContext =
 data FakieEnv =
   FakieEnv
     { fakieEnvLogFile :: Maybe FilePath
-    , fakieEnvLog     :: LogStr -> IO ()
+    , fakieEnvLog     :: Maybe Text
     , fakieEnvTesting :: Bool
     }
 
+newtype ServerOptions =
+  ServerOptions
+    { optPort :: Port
+    } deriving Show
+
+newtype CmdOptions = CmdOptions
+  { storeToFile :: Maybe FilePath
+  }
