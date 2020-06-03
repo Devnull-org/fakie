@@ -8,7 +8,7 @@ import           Control.Monad.Reader     (runReaderT)
 import           Network.Wai.Handler.Warp (runSettings)
 import           Options.Applicative
 import           Server
-import           Types                    (CmdOptions (..), ServerOptions (..))
+import           Types                    (CmdOptions (..), ServerOptions (..), Fakie)
 
 -- serverOptions :: Parser ServerOptions
 -- serverOptions =

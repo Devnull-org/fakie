@@ -1,6 +1,7 @@
 module Server where
 
 import           Common
+import Data.Aeson (Value (..))
 import           Control.Exception.Safe   (SomeException, throwM)
 import           Control.Monad.Reader     (runReaderT, ReaderT)
 import           Data.ByteString.Lazy     hiding (elem, length, null, putStrLn)
@@ -22,11 +23,11 @@ serverStart (ServerOptions port) = do
   let settings = setServerName "Fakie API Server" (setPort port defaultSettings)
   return settings
 
-app :: Application
+app
+  :: Request
+  -> (Response -> IO ResponseReceived)
+  -> IO ResponseReceived
 app req f = do
-  let pathList = pathInfo req
-  when (pathList `elem` ignoreParams) $
-    return ()
   print $ requestMethod req
   response <-
     case requestMethod req of
@@ -34,42 +35,50 @@ app req f = do
       _ -> throwM (FakieException $ "Method not handled " <> T.unpack (decodeUtf8 $ requestMethod req))
   f response
 
+redundantPaths :: [[Text]]
+redundantPaths = [["favicon.ico"]]
+
 handleGetRequest :: Request -> IO Response
-handleGetRequest _req = do
+handleGetRequest req = do
   let logFile = "/home/v0d1ch/code/fakie/.fakie.log"
-  liftIO $ do
-    putStrLn "Fakie Api"
-    putStrLn "reading configuration..."
-  let fakieEnv =
-        FakieEnv
-          { fakieEnvLogFile = Just logFile
-          , fakieEnvLog = Nothing
-          , fakieEnvTesting = True
-          }
-  econfig <- runReaderT readFakieConfig fakieEnv
-  case econfig of
-    Left (e :: SomeException) -> do
-      putStrLn "Configuration error!"
-      putStrLn "Fakie config could not be obtained."
-      putStrLn "Please check the log file to see what went wrong"
-      putStrLn ("Configuration error : " <> show e)
-      throwM (FakieException "failure")
-    Right fakieConfig -> do
-      putStrLn "Configuration looks good"
-      putStrLn "Calling configured endpoints to get the data..."
-      v <-
-          mapConcurrently
-           (\cfg -> flip runReaderT fakieEnv $ do
-             apiResponse <- callApi cfg
-             return $ assignUserKeys cfg apiResponse
-           ) fakieConfig
-      putStrLn "All calls are finished"
-      pTraceShowM v
-      putStrLn "Fakie done"
-      let errors = T.concat $ mappingContextPossibleErrors <$> v
-      if T.length errors > 1
-        then respond500 (T.unpack errors)
-        else return $ returnJson (mappingContextValue <$> v)
+  let path = pathInfo req
+  pTraceShowM (path `elem` redundantPaths)
+  if path `elem` redundantPaths
+    then return $ returnJson (String "Ignore requested favicon.ico")
+    else liftIO $ do
+      pTraceShowM path
+      putStrLn "Fakie Api"
+      putStrLn "reading configuration..."
+      let fakieEnv =
+            FakieEnv
+              { fakieEnvLogFile = Just logFile
+              , fakieEnvLog = Nothing
+              , fakieEnvTesting = False
+              }
+      econfig <- runReaderT readFakieConfig fakieEnv
+      case econfig of
+        Left (e :: SomeException) -> do
+          putStrLn "Configuration error!"
+          putStrLn "Fakie config could not be obtained."
+          putStrLn "Please check the log file to see what went wrong"
+          putStrLn ("Configuration error : " <> show e)
+          throwM (FakieException "failure")
+        Right fakieConfig -> do
+          putStrLn "Configuration looks good"
+          putStrLn "Calling configured endpoints to get the data..."
+          v <-
+              mapConcurrently
+               (\cfg -> flip runReaderT fakieEnv $ do
+                 apiResponse <- callApi cfg
+                 return $ assignUserKeys cfg apiResponse
+               ) fakieConfig
+          putStrLn "All calls are finished"
+          pTraceShowM v
+          putStrLn "Fakie done"
+          let errors = T.concat $ mappingContextPossibleErrors <$> v
+          if T.length errors > 1
+            then respond500 (T.unpack errors)
+            else return $ returnJson (mappingContextValue <$> v)
 
 checkRequestParams :: [ByteString] -> Either Text [ByteString]
 checkRequestParams rp

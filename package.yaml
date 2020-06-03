@@ -69,10 +69,13 @@ executables:
 # Test suite
 tests:
   fakie-test:
-    main: Spec.hs
+    main: Main.hs
     source-dirs: test
     ghc-options: -Wall
     dependencies:
     - fakie
     - hspec >=2.0.0
     - microlens
+    - hedgehog
+    - raw-strings-qq
+    - exceptions
