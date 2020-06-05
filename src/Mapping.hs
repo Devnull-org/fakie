@@ -167,7 +167,7 @@ assignUserKeys :: FakieItem -> Value -> MappingContext
 assignUserKeys FakieItem {..} apiValue =
   let mapping =
         -- initialize the context with empty error string and one empty Object
-        flip execState (MappingContext "" (Object empty)) $
+        flip execState (MappingContext [] (Object empty)) $
           mapM
             (\FakieMap {..} ->
               -- Try to find the api key inside of api results
@@ -208,11 +208,11 @@ assignUserKeys FakieItem {..} apiValue =
 
 -- | Key not found but we want custom error message
 noteError :: Text -> State MappingContext ()
-noteError textErr =
+noteError textErr = do
   modify'
     (\mc ->
        MappingContext
-         (mappingContextPossibleErrors mc <> textErr)
+         (textErr : mappingContextPossibleErrors mc)
          (mappingContextValue mc)
     )
 

@@ -9,6 +9,7 @@ module Util
   , returnHtml
   , returnText
   , returnJson
+  , returnJsonError
   , redirectSuccess
   , respond500
   ) where
@@ -19,7 +20,7 @@ import           Control.Lens
 import           Data.Aeson                (ToJSON, encode)
 import qualified Data.ByteString.Lazy      as LBS
 import           Network.HTTP.Types        (StdMethod (..), status200,
-                                            status308)
+                                            status308, status402)
 import           Network.HTTP.Types.Header (hContentType)
 import           Network.URI               (parseURI)
 import           Network.Wai
@@ -52,6 +53,13 @@ returnJson :: ToJSON a => a -> Response
 returnJson content =
   responseLBS
     status200
+    [(hContentType, "application/json")]
+    (encode content)
+
+returnJsonError :: ToJSON a => a -> Response
+returnJsonError content =
+  responseLBS
+    status402
     [(hContentType, "application/json")]
     (encode content)
 

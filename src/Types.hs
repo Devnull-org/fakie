@@ -103,7 +103,7 @@ type Fakie = [FakieItem]
 
 data MappingContext =
   MappingContext
-   { mappingContextPossibleErrors :: Text
+   { mappingContextPossibleErrors :: [Text]
    , mappingContextValue :: Value
    } deriving (Eq, Show)
 

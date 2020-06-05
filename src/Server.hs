@@ -6,13 +6,14 @@ import           Control.Exception.Safe   (SomeException, throwM)
 import           Control.Monad.Reader     (runReaderT, ReaderT)
 import           Data.ByteString.Lazy     hiding (elem, length, null, putStrLn)
 import qualified Data.Text                as T
+import qualified Data.List as L
 import           Data.Text.Encoding       (decodeUtf8)
 import           Network.Wai
 import           Network.Wai.Handler.Warp (defaultSettings,
                                            setPort, setServerName, Settings)
 import           Types                    (FakieEnv (..), FakieException (..), CmdOptions (..),
                                            ServerOptions (..), MappingContext (..))
-import           Util                     (respond500, returnJson)
+import           Util                     (respond500, returnJson, returnJsonError)
 import           Control.Concurrent.Async (mapConcurrently)
 import           Control.Monad.Trans
 import           Mapping
@@ -75,9 +76,9 @@ handleGetRequest req = do
           putStrLn "All calls are finished"
           pTraceShowM v
           putStrLn "Fakie done"
-          let errors = T.concat $ mappingContextPossibleErrors <$> v
-          if T.length errors > 1
-            then respond500 (T.unpack errors)
+          let errors = mappingContextPossibleErrors <$> v
+          if length errors > 0
+            then return $ returnJsonError (String $ "Following mapped fields could not be found:" <> T.intercalate "," (L.concat errors))
             else return $ returnJson (mappingContextValue <$> v)
 
 checkRequestParams :: [ByteString] -> Either Text [ByteString]
