@@ -57,6 +57,8 @@ module Common
   , pTraceShow
   , pTraceShowM
   , when
+  , not
+  , Word
   ) where
 
 
@@ -69,11 +71,11 @@ import           Data.List           (filter, length, null)
 import           Data.Maybe
 import           Data.Text           (Text)
 import           Debug.Pretty.Simple (pTraceShow, pTraceShowM)
-import           Prelude             (Bool (..), Either (..), Eq, FilePath, IO,
+import           Prelude             (Bool (..), Either (..), Eq, FilePath, IO, Word,
                                       Int, Maybe (..), Show (..), String,
                                       concat, const, drop, elem, error, flip,
                                       fmap, fromIntegral, fst, last, mapM,
-                                      mapM_, notElem, otherwise, print,
+                                      mapM_, notElem, otherwise, print, not,
                                       putStrLn, return, show, snd, undefined,
                                       ($), (+), (.), (/=), (<$>), (<>), (=<<),
                                       (==), (>>), (>), (<))

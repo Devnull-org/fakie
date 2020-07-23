@@ -26,7 +26,7 @@
           "shouldKeep": false
         },
         { "ourkey" : "ourtitle",
-          "theirkey" : "all.nth-3"
+          "theirkey" : "all.nth-3.Object.id"
         },
         { "ourkey" : "janakida",
           "theirkey" : "body"
@@ -36,6 +36,40 @@
         },
         { "ourkey" : "b",
           "theirkey" : "body"
+        }
+      ]
+  },
+
+  {
+    "name" : "yo test api",
+    "route" : "/api/yo/test",
+    "method" : "GET",
+    "url" : "https://jsonplaceholder.typicode.com/posts",
+    "queryParams":
+      [
+          {
+           "name" : "userId",
+           "value" : "5"
+          }
+      ],
+    "headers":
+      [
+        {
+          "name" : "Content/Fieldtype",
+          "value" : "Application/json"
+        }
+      ],
+    "body": {"requestBody": "some test request body"},
+    "mapping":
+      [
+        { "ourkey" : "mytitlefromarray",
+          "theirkey" : "Array.nth-2.Object.title"
+        },
+        { "ourkey" : "skateordie",
+          "theirkey" : "body"
+        },
+        { "ourkey" : "identifier",
+          "theirkey" : "id"
         }
       ]
   }

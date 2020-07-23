@@ -20,6 +20,9 @@ import           Types
 jsonObjectWithEmptyList :: ByteString
 jsonObjectWithEmptyList = [r|{"a":[]} |]
 
+jsonObjectWithListOfObjects :: ByteString
+jsonObjectWithListOfObjects = [r|{"a":[{"b":1},{"c":"some String"},{"d":[1,2,3,4]}]} |]
+
 main :: IO Bool
 main =
   checkParallel $ Group "Test Mapping" [
@@ -37,9 +40,14 @@ prop_findValueKey :: Property
 prop_findValueKey =
   property $ do
     let emptyArray = Array V.empty
-    val <- decodeToValue jsonObjectWithEmptyList
-    findInPath "a" val Nothing === Right emptyArray
-    findInPath "a" val Nothing === Right emptyArray
-    findInPath "Object" val Nothing === Right (Object $ singleton "a" emptyArray)
-    findInPath "Object.a" val Nothing === Right emptyArray
-    findInPath "a.Array" val Nothing === Right emptyArray
+    objectWithEmptyList <- decodeToValue jsonObjectWithEmptyList
+    objectWithListOfObjects <- decodeToValue jsonObjectWithListOfObjects
+    findInPath "a" objectWithEmptyList Nothing === Right emptyArray
+    findInPath "a" objectWithEmptyList Nothing === Right emptyArray
+    findInPath "Object" objectWithEmptyList Nothing === Right (Object $ singleton "a" emptyArray)
+    findInPath "Object.a" objectWithEmptyList Nothing === Right emptyArray
+    findInPath "a.Array" objectWithEmptyList Nothing === Right emptyArray
+    findInPath "a.Array.nth-0.Object.b" objectWithListOfObjects Nothing === Right (Number 1)
+    findInPath "a.Array.nth-1.Object.c" objectWithListOfObjects Nothing === Right (String "some String")
+    findInPath "a.Array.nth-2.Object.d" objectWithListOfObjects Nothing ===
+      Right (Array $ V.fromList $ Number <$> [1,2,3,4])

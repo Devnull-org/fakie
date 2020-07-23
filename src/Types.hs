@@ -10,7 +10,6 @@ module Types
   , MappingContext (..)
   , ServerOptions (..)
   , CmdOptions (..)
-  , configFileName
   ) where
 
 import           Control.Exception.Safe (Exception)
@@ -20,9 +19,6 @@ import           Data.Text              (Text)
 import           Text.Casing            (camel)
 import           Common
 import           Network.Wai.Handler.Warp (Port)
-
-configFileName :: FilePath
-configFileName = ".fakie.json"
 
 
 newtype FakieException = FakieException String deriving (Show, Eq)
@@ -103,15 +99,18 @@ type Fakie = [FakieItem]
 
 data MappingContext =
   MappingContext
-   { mappingContextPossibleErrors :: [Text]
+   { mappingContextFailures :: [Text]
+   , mappingContextErrors :: [Text]
    , mappingContextValue :: Value
    } deriving (Eq, Show)
 
+$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 14 }) ''MappingContext)
+
 data FakieEnv =
   FakieEnv
-    { fakieEnvLogFile :: Maybe FilePath
-    , fakieEnvLog     :: Maybe Text
-    , fakieEnvTesting :: Bool
+    { fakieEnvLogFile    :: FilePath
+    , fakieEnvConfigFile :: FilePath
+    , fakieEnvTesting    :: Bool
     }
 
 newtype ServerOptions =
@@ -119,6 +118,10 @@ newtype ServerOptions =
     { optPort :: Port
     } deriving Show
 
-newtype CmdOptions = CmdOptions
-  { storeToFile :: Maybe FilePath
-  }
+-- TODO: introduce store to file for the next version
+-- storeToFile :: Maybe FilePath
+data CmdOptions = CmdOptions
+  { cmdOptionsConfigFile  :: Maybe FilePath
+  , cmdOptionsLogFile     :: Maybe FilePath
+  , cmdOptionsServerPort  :: Int
+  } deriving (Eq, Show)

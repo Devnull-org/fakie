@@ -4,46 +4,51 @@
 module Main where
 
 import           Common
-import           Control.Monad.Reader     (runReaderT)
-import           Network.Wai.Handler.Warp (runSettings)
+import           Control.Monad.Reader        (runReaderT)
 import           Options.Applicative
 import           Server
-import           Types                    (CmdOptions (..), ServerOptions (..), Fakie)
-
--- serverOptions :: Parser ServerOptions
--- serverOptions =
---   ServerOptions
---     <$> option auto
---         ( long "p"
---          <> help "Set the server port"
---          <> metavar "INT" )
-
--- serve :: IO ()
--- serve = do
---   _ <- execParser opts
---   return ()
---   where
---     opts = info (serverOptions <**> helper)
---       ( fullDesc
---      <> progDesc "Fakie server - serves your json content"
---      <> header "Fakie: Your Json toolbox for the web" )
+import           Types                       (CmdOptions (..))
 
 options :: Parser CmdOptions
 options =
   CmdOptions
+    -- TODO: introduce this option in the next version
+    -- <$> optional
+    --      (strOption
+    --       ( long "store-to-file"
+    --        <> short 'f'
+    --        <> help "If you don't want to run the server you can get all of the API json data in a file"
+    --       )
+    --     )
     <$> optional
-         (strOption
-          ( long "store-to-file"
-           <> short 'f'
-           <> help "If you don't want to run the server you can get all of the API json data in a file"
-          )
+        ( strOption
+           ( long "configuration-file"
+             <> short 'c'
+             <> help "Provide your configuration for Fakie server. \
+                      \ Default place we look at is file named '.fakie.json'  \
+                      \ in current directory."
+           )
+         )
+    <*> optional
+        ( strOption
+           ( long "log-file"
+             <> short 'l'
+             <> help "Provide your log file for Fakie server. \
+                      \ Default place we log at is file named '.fakie.log'  \
+                      \ in current directory."
+           )
+         )
+    <*>
+      option auto
+        ( long "port"
+         <> short 'p'
+         <> help "Specify the port for the Fakie server"
         )
 
 main :: IO ()
 main = do
   cmdOptions <- execParser opts
-  settings <- runReaderT (serverStart (ServerOptions 4500)) cmdOptions
-  runSettings settings app
+  runReaderT serverStart cmdOptions
   where
     opts = info (options <**> helper)
       ( fullDesc

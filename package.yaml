@@ -23,6 +23,7 @@ dependencies:
 - http-conduit
 - http-types
 - unordered-containers
+- uri-encode
 - vector
 - safe-exceptions
 - errors
@@ -35,7 +36,10 @@ dependencies:
 - warp
 - wai
 - wai-extra
+- wai-transformers
+- wai-app-static
 - wai-util
+- wai-cors
 - yaml
 
 default-extensions:
