@@ -38,6 +38,13 @@ options =
                       \ in current directory."
            )
          )
+    <*> optional
+        ( strOption
+           ( long "output-file"
+             <> short 'o'
+             <> help "Provide a file path if you want to save the server response to file."
+           )
+         )
     <*>
       option auto
         ( long "port"

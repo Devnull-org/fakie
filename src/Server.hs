@@ -9,7 +9,7 @@ import qualified Control.Error            as ER
 import           Control.Lens ((^.))
 import           Control.Exception.Safe   (SomeException, throwM, tryAny, MonadThrow, SomeException (..))
 import           Control.Monad.Reader     (runReaderT, ReaderT (..), MonadReader (..))
-import           Data.Aeson (Value (..),decode, eitherDecode)
+import           Data.Aeson (Value (..),encode, decode, eitherDecode, toJSON)
 import qualified Data.Text                as T
 import qualified Data.List as L
 import           Data.Text.Encoding       (decodeUtf8)
@@ -24,7 +24,7 @@ import           Network.HTTP.Simple (Query, JSONException (..), setRequestBodyJ
                                      , getResponseBody, httpJSONEither, setRequestQueryString)
 import qualified Data.CaseInsensitive     as CI
 import           Network.Wai.Handler.Warp (defaultSettings, setPort, setServerName, runSettings)
-import           Types                    (FakieEnv (..), FakieException (..), FakieItem (..)
+import           Types                    (Fakie, FakieEnv (..), FakieException (..), FakieItem (..)
                                           , FakieHeader (..), CmdOptions (..), Fakie
                                           , FakieQueryParam (..), MappingContext (..)
                                           , FakieResult (..))
@@ -41,19 +41,46 @@ import           Mapping (findValueKey, assignUserKeys)
 
 serverStart :: (MonadIO m, MonadThrow m, MonadReader CmdOptions m) => m ()
 serverStart = do
-  cmdOptions@CmdOptions {..} <- ask
-  let
-    settings = setServerName "Fakie API Server" (setPort cmdOptionsServerPort defaultSettings)
-    app = staticApp (defaultWebAppSettings "fakie")
+  CmdOptions {..} <- ask
   liftIO $ do
-    putStrLn ("[INFO] Running server on port " <> show cmdOptionsServerPort)
-    runSettings settings (logStdoutDev $ fakieMiddleware cmdOptions $ simpleCors app)
+    when (isNothing cmdOptionsLogFile) $
+      putStrLn "[INFO] Could not find provided log file path. Defaulting to /.fakie.log"
+    when (isNothing cmdOptionsConfigFile) $
+      putStrLn "[INFO] Could not find provided configuration file path. Defaulting to /.fakie.json"
+    let
+      fakieLogFile = fromMaybe "/.fakie.log" cmdOptionsLogFile
+      fakieConfigFile = fromMaybe "/.fakie.json" cmdOptionsConfigFile
+      fakieEnv =
+        FakieEnv
+          { fakieEnvLogFile = fakieLogFile
+          , fakieEnvConfigFile = fakieConfigFile
+          , fakieEnvOutputToFile = cmdOptionsOutputToFile
+          , fakieEnvTesting = False
+          }
+    putStrLn "[INFO] Fakie Api"
+    putStrLn "[INFO] reading configuration..."
+    econfig <- runReaderT readFakieConfig fakieEnv
+    case econfig of
+      Left (e :: SomeException) -> do
+        putStrLn "[ERROR] Configuration error!"
+        putStrLn "[ERROR] Fakie config could not be obtained."
+        putStrLn "[ERROR] Please check the log file to see what went wrong"
+        putStrLn $ "[ERROR] Configuration error : " <> show e
+        throwM (FakieException "failure")
+      Right fakieConfig -> do
+        putStrLn $ "[INFO] Configuration read from " <> fakieConfigFile
+        putStrLn "[INFO] Calling configured endpoints to get the data..."
+        let
+          settings = setServerName "Fakie API Server" (setPort cmdOptionsServerPort defaultSettings)
+          app = staticApp (defaultWebAppSettings "fakie")
+        putStrLn ("[INFO] Running server on port " <> show cmdOptionsServerPort)
+        runSettings settings (logStdoutDev $ fakieMiddleware fakieConfig fakieEnv $ simpleCors app)
 
-fakieMiddleware :: CmdOptions -> Middleware
-fakieMiddleware options _ req f = do
+fakieMiddleware :: Fakie -> FakieEnv -> Middleware
+fakieMiddleware fakieConfig fakieEnv _ req f = do
   response <-
     case requestMethod req of
-      "POST"  -> handlePostRequest options req
+      "POST"  -> handlePostRequest fakieConfig fakieEnv req
       _ ->
         throwM (FakieException $ "Method not handled " <>
                 T.unpack (decodeUtf8 $ requestMethod req)
@@ -63,77 +90,67 @@ fakieMiddleware options _ req f = do
 redundantPaths :: [[Text]]
 redundantPaths = [["favicon.ico"]]
 
-handlePostRequest :: CmdOptions -> Request -> IO Response
-handlePostRequest CmdOptions {..} req = do
-  when (isNothing cmdOptionsLogFile) $
-    putStrLn "[INFO] Could not find provided log file path. Defaulting to /.fakie.log"
-  when (isNothing cmdOptionsConfigFile) $
-    putStrLn "[INFO] Could not find provided configuration file path. Defaulting to /.fakie.json"
-  let
-    fakieLogFile = fromMaybe "/.fakie.log" cmdOptionsLogFile
-    fakieConfigFile = fromMaybe "/.fakie.json" cmdOptionsConfigFile
-    path = pathInfo req
+handlePostRequest :: Fakie -> FakieEnv -> Request -> IO Response
+handlePostRequest fakieConfig fakieEnv req = do
+  let path = pathInfo req
   if path `elem` redundantPaths
     then return $ returnJson (String "Ignore requested favicon.ico")
     else liftIO $ do
-      putStrLn "[INFO] Fakie Api"
-      putStrLn "[INFO] reading configuration..."
-      let fakieEnv =
-            FakieEnv
-              { fakieEnvLogFile = fakieLogFile
-              , fakieEnvConfigFile = fakieConfigFile
-              , fakieEnvTesting = False
-              }
-      econfig <- runReaderT readFakieConfig fakieEnv
-      case econfig of
-        Left (e :: SomeException) -> do
-          putStrLn "[ERROR] Configuration error!"
-          putStrLn "[ERROR] Fakie config could not be obtained."
-          putStrLn "[ERROR] Please check the log file to see what went wrong"
-          putStrLn $ "[ERROR] Configuration error : " <> show e
-          throwM (FakieException "failure")
-        Right fakieConfig -> do
-          putStrLn $ "[INFO] Configuration read from " <> fakieConfigFile
-          putStrLn "[INFO] Calling configured endpoints to get the data..."
-          body <- getRequestBodyChunk req
-          v <-
-            mapConcurrently
-             (\cfg -> flip runReaderT fakieEnv $ do
-               eApiResponse <- tryAny (callApi cfg body)
-               case eApiResponse of
-                 Left err ->
-                   return $
-                     MappingContext
-                       { mappingContextFailures = [T.pack $ show err]
-                       , mappingContextErrors = []
-                       , mappingContextValue = Null
-                       }
-                 Right apiResponse ->
-                   return $ assignUserKeys cfg apiResponse
-             ) fakieConfig
-          putStrLn "[INFO] All calls are finished"
-          let
-            errors = mappingContextErrors <$> v
-            thereAreFatalErrors = any (== False) (null <$> errors)
-          if thereAreFatalErrors
-            then
-              return .
-                returnJsonError . String $
-                  "Following mapped fields could not be found:" <>
-                  T.intercalate "," (L.concat errors)
-
-            else do
+      body <- getRequestBodyChunk req
+      v <-
+        mapConcurrently
+         (\cfg -> flip runReaderT fakieEnv $ do
+           eApiResponse <- tryAny (callApi cfg body)
+           case eApiResponse of
+             Left err ->
+               return $
+                 MappingContext
+                   { mappingContextFailures = [T.pack $ show err]
+                   , mappingContextErrors = []
+                   , mappingContextValue = Null
+                   }
+             Right apiResponse ->
+               return $ assignUserKeys cfg apiResponse
+         ) fakieConfig
+      putStrLn "[INFO] All calls are finished"
+      let
+        errors = mappingContextErrors <$> v
+        thereAreFatalErrors = False `elem` (null <$> errors)
+      if thereAreFatalErrors
+        then
+          return $ returnJsonError
+            ( String $
+              "Following mapped fields could not be found:" <>
+              T.intercalate "," (L.concat errors)
+            )
+        else do
+          eWritten <- tryAny (maybeOutputToFile (fakieEnvOutputToFile fakieEnv) (toJSON $ mappingContextValue <$> v))
+          case eWritten of
+            Left err -> throwM (FakieException $ "Could not write to output file! " <> show err)
+            Right _ -> do
               let
                 failList = L.concat $ mappingContextFailures <$> v
                 failures
                   | not (null failList) = Just $ T.intercalate "," failList
                   | otherwise = Nothing
-              let response =
-                    FakieResult
-                      { fakieResultFailures = failures
-                      , fakieResultValue = mappingContextValue <$> v
-                      }
-              return $ returnJson response
+                response =
+                  FakieResult
+                    { fakieResultFailures = failures
+                    , fakieResultValue = []
+                    , fakieResultMessage =
+                        maybe
+                          ""
+                          (\outputPath ->
+                              "Response redirected to file: " <> T.pack outputPath
+                          )
+                          (fakieEnvOutputToFile fakieEnv)
+                    }
+              return $ returnJson (toJSON response)
+
+maybeOutputToFile :: MonadIO m => Maybe FilePath -> Value -> m ()
+maybeOutputToFile mOutputToFile val =
+  when (isJust mOutputToFile) $
+    liftIO $ BSL.writeFile (fromJust mOutputToFile) (encode val)
 
 readFakieConfig
   :: ( MonadIO m

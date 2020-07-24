@@ -109,9 +109,10 @@ $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 14 }) ''Mapping
 
 data FakieEnv =
   FakieEnv
-    { fakieEnvLogFile    :: FilePath
-    , fakieEnvConfigFile :: FilePath
-    , fakieEnvTesting    :: Bool
+    { fakieEnvLogFile      :: FilePath
+    , fakieEnvConfigFile   :: FilePath
+    , fakieEnvOutputToFile :: Maybe FilePath
+    , fakieEnvTesting      :: Bool
     }
 
 newtype ServerOptions =
@@ -119,18 +120,18 @@ newtype ServerOptions =
     { optPort :: Port
     } deriving Show
 
--- TODO: introduce store to file for the next version
--- storeToFile :: Maybe FilePath
 data CmdOptions = CmdOptions
-  { cmdOptionsConfigFile  :: Maybe FilePath
-  , cmdOptionsLogFile     :: Maybe FilePath
-  , cmdOptionsServerPort  :: Int
+  { cmdOptionsConfigFile   :: Maybe FilePath
+  , cmdOptionsLogFile      :: Maybe FilePath
+  , cmdOptionsOutputToFile :: Maybe FilePath
+  , cmdOptionsServerPort   :: Int
   } deriving (Eq, Show)
 
 data FakieResult =
   FakieResult
     { fakieResultFailures :: Maybe Text
-    , fakieResultValue :: [Value]
+    , fakieResultValue    :: [Value]
+    , fakieResultMessage  :: Text
     } deriving (Eq, Show)
 
 $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 11 }) ''FakieResult)
