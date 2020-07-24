@@ -26,7 +26,7 @@
           "shouldKeep": false
         },
         { "ourkey" : "ourtitle",
-          "theirkey" : "all.nth-3.Object.id"
+          "theirkey" : "all.nth-0.id"
         },
         { "ourkey" : "janakida",
           "theirkey" : "body"
@@ -63,7 +63,7 @@
     "mapping":
       [
         { "ourkey" : "mytitlefromarray",
-          "theirkey" : "Array.nth-2.Object.title"
+          "theirkey" : "Array.nth-2.title"
         },
         { "ourkey" : "skateordie",
           "theirkey" : "body"

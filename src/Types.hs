@@ -10,6 +10,7 @@ module Types
   , MappingContext (..)
   , ServerOptions (..)
   , CmdOptions (..)
+  , FakieResult (..)
   ) where
 
 import           Control.Exception.Safe (Exception)
@@ -125,3 +126,11 @@ data CmdOptions = CmdOptions
   , cmdOptionsLogFile     :: Maybe FilePath
   , cmdOptionsServerPort  :: Int
   } deriving (Eq, Show)
+
+data FakieResult =
+  FakieResult
+    { fakieResultFailures :: Maybe Text
+    , fakieResultValue :: [Value]
+    } deriving (Eq, Show)
+
+$(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 11 }) ''FakieResult)

@@ -39,23 +39,22 @@ assignUserKeys FakieItem {..} apiValue =
       -- initialize the context with empty error string and one empty Object
       flip execState emptyMappingContext $
         mapM
-          (\FakieMap {..} ->
-            -- Try to find the api key inside of api results
-            case findInPath fakieMapTheirkey apiValue Nothing of
+          (\FakieMap {..} -> do
+            context  <- get
+            let
+              -- Try to find the api key inside of api results
+              eApiResults = findInPath fakieMapTheirkey apiValue Nothing
+              -- try to look in our current mapped value so far for the key.
+              -- This is the case where we want to assign some value to our key so
+              -- we can look it up later on.
+              eAllreadyMappedLookup =
+                findInPath fakieMapTheirkey (mappingContextValue context) Nothing
+              -- grab either value from api results or already mapped ones
+              eFoundVal = ER.either (const eAllreadyMappedLookup) Right eApiResults
+            case eFoundVal of
               Left _ -> noteError fakieMapTheirkey
               -- we found the key, map it to our user json
-              Right foundVal -> do
-                context  <- get
-                let newValue =
-                      createValueKey fakieMapOurkey foundVal (mappingContextValue context)
-                modify'
-                  (\mc ->
-                     MappingContext
-                       { mappingContextFailures = []
-                       , mappingContextErrors = mappingContextErrors mc
-                       , mappingContextValue = newValue
-                       }
-                  )
+              Right foundVal -> addToMap fakieMapOurkey foundVal context
           ) fakieItemMapping
     -- we filter our the keys we should remove from final json
     keysToRemove =
@@ -80,8 +79,24 @@ assignUserKeys FakieItem {..} apiValue =
               )
           ) keysToRemove
   in
-    pTraceShow mapping
     adjustedMapping
+
+addToMap
+  :: Text
+  -> Value
+  -> MappingContext
+  -> State MappingContext ()
+addToMap ourKey foundVal currentContext = do
+  let newValue =
+        createValueKey ourKey foundVal (mappingContextValue currentContext)
+  modify'
+    (\mc ->
+       MappingContext
+         { mappingContextFailures = []
+         , mappingContextErrors = mappingContextErrors mc
+         , mappingContextValue = newValue
+         }
+    )
 
 --------------------------------------------------------------------------------------------
 -- INTERNAL

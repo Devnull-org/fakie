@@ -29,6 +29,8 @@ module Common
   , (/=)
   , (<$>)
   , (==)
+  , id
+  , any
   , fmap
   , last
   , (>>)
@@ -74,8 +76,8 @@ import           Debug.Pretty.Simple (pTraceShow, pTraceShowM)
 import           Prelude             (Bool (..), Either (..), Eq, FilePath, IO, Word,
                                       Int, Maybe (..), Show (..), String,
                                       concat, const, drop, elem, error, flip,
-                                      fmap, fromIntegral, fst, last, mapM,
-                                      mapM_, notElem, otherwise, print, not,
+                                      fmap, fromIntegral, fst, last, mapM, any,
+                                      mapM_, notElem, otherwise, print, not, id,
                                       putStrLn, return, show, snd, undefined,
                                       ($), (+), (.), (/=), (<$>), (<>), (=<<),
                                       (==), (>>), (>), (<))

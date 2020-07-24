@@ -26,7 +26,8 @@ import qualified Data.CaseInsensitive     as CI
 import           Network.Wai.Handler.Warp (defaultSettings, setPort, setServerName, runSettings)
 import           Types                    (FakieEnv (..), FakieException (..), FakieItem (..)
                                           , FakieHeader (..), CmdOptions (..), Fakie
-                                          , FakieQueryParam (..), MappingContext (..))
+                                          , FakieQueryParam (..), MappingContext (..)
+                                          , FakieResult (..))
 import           Network.Wai.Middleware.Cors (simpleCors)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import           Network.Wai.Application.Static (staticApp, defaultWebAppSettings)
@@ -111,15 +112,28 @@ handlePostRequest CmdOptions {..} req = do
                    return $ assignUserKeys cfg apiResponse
              ) fakieConfig
           putStrLn "[INFO] All calls are finished"
-          let errors = mappingContextErrors <$> v
-          if not (null errors)
+          let
+            errors = mappingContextErrors <$> v
+            thereAreFatalErrors = any (== False) (null <$> errors)
+          if thereAreFatalErrors
             then
-              return $
-                returnJsonError
-                  (String $ "Following mapped fields could not be found:" <>
-                               T.intercalate "," (L.concat errors)
-                  )
-            else return $ returnJson (mappingContextValue <$> v)
+              return .
+                returnJsonError . String $
+                  "Following mapped fields could not be found:" <>
+                  T.intercalate "," (L.concat errors)
+
+            else do
+              let
+                failList = L.concat $ mappingContextFailures <$> v
+                failures
+                  | not (null failList) = Just $ T.intercalate "," failList
+                  | otherwise = Nothing
+              let response =
+                    FakieResult
+                      { fakieResultFailures = failures
+                      , fakieResultValue = mappingContextValue <$> v
+                      }
+              return $ returnJson response
 
 readFakieConfig
   :: ( MonadIO m
