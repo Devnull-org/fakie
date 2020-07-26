@@ -1,12 +1,13 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE MultiWayIf        #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms   #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE NoImplicitPrelude   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Mapping
   ( assignUserKeys
@@ -15,14 +16,14 @@ module Mapping
   ) where
 
 import           Common
-import qualified Control.Error            as ER
+import qualified Control.Error       as ER
 import           Data.Aeson
-import           Data.HashMap.Strict      (delete, empty, insert, lookup)
-import           Data.List                (tail)
-import           Data.Maybe               (isNothing)
-import           Data.Text                (Text)
-import qualified Data.Text                as T
-import qualified Data.Vector              as V
+import           Data.HashMap.Strict (delete, empty, insert, lookup)
+import           Data.List           (tail)
+import           Data.Maybe          (isNothing)
+import           Data.Text           (Text)
+import qualified Data.Text           as T
+import qualified Data.Vector         as V
 import           Types
 
 -- Go through each mapping in the configuration and map user keys to the api ones.
@@ -52,7 +53,7 @@ assignUserKeys FakieItem {..} apiValue =
               -- grab either value from api results or already mapped ones
               eFoundVal = ER.either (const eAllreadyMappedLookup) Right eApiResults
             case eFoundVal of
-              Left _ -> noteError fakieMapTheirkey
+              Left _         -> noteError fakieMapTheirkey
               -- we found the key, map it to our user json
               Right foundVal -> addToMap fakieMapOurkey foundVal context
           ) fakieItemMapping

@@ -1,86 +1,114 @@
-{-# LANGUAGE MultiWayIf        #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Server where
 
 import           Common
-import qualified Control.Error            as ER
-import           Control.Lens ((^.))
-import           Control.Exception.Safe   (SomeException, throwM, tryAny, MonadThrow, SomeException (..))
-import           Control.Monad.Reader     (runReaderT, ReaderT (..), MonadReader (..))
-import           Data.Aeson (Value (..),encode, decode, eitherDecode, toJSON)
-import qualified Data.Text                as T
-import qualified Data.List as L
-import           Data.Text.Encoding       (decodeUtf8)
-import qualified Data.ByteString          as BS
-import qualified Data.ByteString.Lazy     as BSL
-import           Network.URI.Encode       (encodeTextToBS)
-import           Network.Wai (Middleware, Request (..), Response, getRequestBodyChunk
-                             , pathInfo)
-import qualified Network.HTTP.Client as Client
-import           Network.HTTP.Simple (Query, JSONException (..), setRequestBodyJSON
-                                     , setRequestHeaders, getResponseStatusCode
-                                     , getResponseBody, httpJSONEither, setRequestQueryString)
-import qualified Data.CaseInsensitive     as CI
-import           Network.Wai.Handler.Warp (defaultSettings, setPort, setServerName, runSettings)
-import           Types                    (Fakie, FakieEnv (..), FakieException (..), FakieItem (..)
-                                          , FakieHeader (..), CmdOptions (..), Fakie
-                                          , FakieQueryParam (..), MappingContext (..)
-                                          , FakieResult (..))
-import           Network.Wai.Middleware.Cors (simpleCors)
-import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Network.Wai.Application.Static (staticApp, defaultWebAppSettings)
-import           Util                     (returnJson, returnJsonError)
-import           Control.Concurrent.Async (mapConcurrently)
-import           System.Directory         (getCurrentDirectory, listDirectory)
+import           Control.Concurrent.Async             (mapConcurrently)
+import qualified Control.Error                        as ER
+import           Control.Exception.Safe               (MonadCatch, MonadThrow,
+                                                       SomeException (..),
+                                                       throwM, tryAny)
+import           Control.Lens                         ((^.))
+import           Control.Monad.Logger                 (MonadLogger, logErrorN,
+                                                       logInfoN,
+                                                       runStdoutLoggingT)
+import           Control.Monad.Reader                 (MonadReader (..),
+                                                       ReaderT (..), runReaderT)
 import           Control.Monad.Trans
-import           System.FilePath          ((</>))
-import           System.FilePath.Lens (filename)
-import           Mapping (findValueKey, assignUserKeys)
+import           Data.Aeson                           (Value (..), decode,
+                                                       eitherDecode, encode,
+                                                       toJSON)
+import qualified Data.ByteString                      as BS
+import qualified Data.ByteString.Lazy                 as BSL
+import qualified Data.CaseInsensitive                 as CI
+import qualified Data.List                            as L
+import qualified Data.Text                            as T
+import           Data.Text.Encoding                   (decodeUtf8)
+import           Mapping                              (assignUserKeys,
+                                                       findValueKey)
+import qualified Network.HTTP.Client                  as Client
+import           Network.HTTP.Simple                  (JSONException (..),
+                                                       Query, getResponseBody,
+                                                       getResponseStatusCode,
+                                                       httpJSONEither,
+                                                       setRequestBodyJSON,
+                                                       setRequestHeaders,
+                                                       setRequestQueryString)
+import           Network.URI.Encode                   (encodeTextToBS)
+import           Network.Wai                          (Middleware, Request (..),
+                                                       Response,
+                                                       getRequestBodyChunk,
+                                                       pathInfo)
+import           Network.Wai.Application.Static       (defaultWebAppSettings,
+                                                       staticApp)
+import           Network.Wai.Handler.Warp             (defaultSettings,
+                                                       runSettings, setPort,
+                                                       setServerName)
+import           Network.Wai.Middleware.Cors          (simpleCors)
+import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
+import           System.Directory                     (getCurrentDirectory,
+                                                       listDirectory)
+import           System.FilePath                      ((</>))
+import           System.FilePath.Lens                 (filename)
+import           Types                                (CmdOptions (..), Fakie,
+                                                       Fakie, FakieEnv (..),
+                                                       FakieException (..),
+                                                       FakieHeader (..),
+                                                       FakieItem (..),
+                                                       FakieQueryParam (..),
+                                                       FakieResult (..),
+                                                       MappingContext (..))
+import           Util                                 (returnJson,
+                                                       returnJsonError)
 
-serverStart :: (MonadIO m, MonadThrow m, MonadReader CmdOptions m) => m ()
+serverStart
+  :: ( MonadIO m
+     , MonadThrow m
+     , MonadLogger m
+     , MonadReader CmdOptions m
+     )
+  => m ()
 serverStart = do
   CmdOptions {..} <- ask
-  liftIO $ do
-    when (isNothing cmdOptionsLogFile) $
-      putStrLn "[INFO] Could not find provided log file path. Defaulting to /.fakie.log"
-    when (isNothing cmdOptionsConfigFile) $
-      putStrLn "[INFO] Could not find provided configuration file path. Defaulting to /.fakie.json"
-    let
-      fakieLogFile = fromMaybe "/.fakie.log" cmdOptionsLogFile
-      fakieConfigFile = fromMaybe "/.fakie.json" cmdOptionsConfigFile
-      fakieEnv =
-        FakieEnv
-          { fakieEnvLogFile = fakieLogFile
-          , fakieEnvConfigFile = fakieConfigFile
-          , fakieEnvOutputToFile = cmdOptionsOutputToFile
-          , fakieEnvTesting = False
-          }
-    putStrLn "[INFO] Fakie Api"
-    putStrLn "[INFO] reading configuration..."
-    econfig <- runReaderT readFakieConfig fakieEnv
-    case econfig of
-      Left (e :: SomeException) -> do
-        putStrLn "[ERROR] Configuration error!"
-        putStrLn "[ERROR] Fakie config could not be obtained."
-        putStrLn "[ERROR] Please check the log file to see what went wrong"
-        putStrLn $ "[ERROR] Configuration error : " <> show e
-        throwM (FakieException "failure")
-      Right fakieConfig -> do
-        putStrLn $ "[INFO] Configuration read from " <> fakieConfigFile
-        putStrLn "[INFO] Calling configured endpoints to get the data..."
-        let
-          settings = setServerName "Fakie API Server" (setPort cmdOptionsServerPort defaultSettings)
-          app = staticApp (defaultWebAppSettings "fakie")
-        putStrLn ("[INFO] Running server on port " <> show cmdOptionsServerPort)
-        runSettings settings (logStdoutDev $ fakieMiddleware fakieConfig fakieEnv $ simpleCors app)
+  when (isNothing cmdOptionsConfigFile) $
+    logInfoN "Could not find provided configuration file path. Defaulting to /.fakie.json"
+  let
+    fakieConfigFile = fromMaybe "/.fakie.json" cmdOptionsConfigFile
+    fakieEnv =
+      FakieEnv
+        { fakieEnvConfigFile = fakieConfigFile
+        , fakieEnvOutputToFile = cmdOptionsOutputToFile
+        , fakieEnvTesting = False
+        , fakieEnvMapping = []
+        }
+  logInfoN "Fakie Api"
+  logInfoN "reading configuration..."
+  econfig <- runReaderT readFakieConfig fakieEnv
+  case econfig of
+    Left (e :: SomeException) -> do
+      logErrorN "Configuration error!"
+      logErrorN "Fakie config could not be obtained."
+      logErrorN "Please check the log file to see what went wrong"
+      logErrorN ("Configuration error : " <> T.pack (show e))
+      throwM (FakieException "failure")
+    Right fakieConfig -> do
+      logInfoN $ "Configuration read from " <> T.pack fakieConfigFile
+      logInfoN "Calling configured endpoints to get the data..."
+      let
+        fakieEnvWithMapping = fakieEnv { fakieEnvMapping = fakieConfig }
+        settings = setServerName "Fakie API Server" (setPort cmdOptionsServerPort defaultSettings)
+        app = staticApp (defaultWebAppSettings "fakie")
+      logInfoN ("Running server on port " <> T.pack (show cmdOptionsServerPort))
+      liftIO $ runSettings settings (logStdoutDev $ fakieMiddleware fakieEnvWithMapping $ simpleCors app)
 
-fakieMiddleware :: Fakie -> FakieEnv -> Middleware
-fakieMiddleware fakieConfig fakieEnv _ req f = do
+fakieMiddleware :: FakieEnv -> Middleware
+fakieMiddleware fakieEnv _ req f = do
   response <-
     case requestMethod req of
-      "POST"  -> handlePostRequest fakieConfig fakieEnv req
+      "POST"  -> runStdoutLoggingT (flip runReaderT fakieEnv $ handlePostRequest req)
       _ ->
         throwM (FakieException $ "Method not handled " <>
                 T.unpack (decodeUtf8 $ requestMethod req)
@@ -90,14 +118,22 @@ fakieMiddleware fakieConfig fakieEnv _ req f = do
 redundantPaths :: [[Text]]
 redundantPaths = [["favicon.ico"]]
 
-handlePostRequest :: Fakie -> FakieEnv -> Request -> IO Response
-handlePostRequest fakieConfig fakieEnv req = do
+handlePostRequest
+  :: ( MonadIO m
+     , MonadCatch m
+     , MonadLogger m
+     , MonadReader FakieEnv m
+     )
+  => Request
+  -> m Response
+handlePostRequest req = do
+  fakieEnv <- ask
   let path = pathInfo req
   if path `elem` redundantPaths
     then return $ returnJson (String "Ignore requested favicon.ico")
-    else liftIO $ do
-      body <- getRequestBodyChunk req
-      v <-
+    else do
+      body <- liftIO $ getRequestBodyChunk req
+      v <- liftIO $
         mapConcurrently
          (\cfg -> flip runReaderT fakieEnv $ do
            eApiResponse <- tryAny (callApi cfg body)
@@ -111,8 +147,8 @@ handlePostRequest fakieConfig fakieEnv req = do
                    }
              Right apiResponse ->
                return $ assignUserKeys cfg apiResponse
-         ) fakieConfig
-      putStrLn "[INFO] All calls are finished"
+         ) (fakieEnvMapping fakieEnv)
+      logInfoN "All calls are finished"
       let
         errors = mappingContextErrors <$> v
         thereAreFatalErrors = False `elem` (null <$> errors)
@@ -136,7 +172,11 @@ handlePostRequest fakieConfig fakieEnv req = do
                 response =
                   FakieResult
                     { fakieResultFailures = failures
-                    , fakieResultValue = []
+                    , fakieResultValue =
+                        maybe
+                          (mappingContextValue <$> v)
+                          (const [])
+                          (fakieEnvOutputToFile fakieEnv)
                     , fakieResultMessage =
                         maybe
                           ""
@@ -155,7 +195,8 @@ maybeOutputToFile mOutputToFile val =
 readFakieConfig
   :: ( MonadIO m
      , MonadThrow m
-     , MonadReader FakieEnv m)
+     , MonadReader FakieEnv m
+     , MonadLogger m)
   => m (Either SomeException Fakie)
 readFakieConfig =
   ER.runExceptT $ do
@@ -164,8 +205,7 @@ readFakieConfig =
     fileList <- ER.ExceptT $ liftIO (tryAny $ listDirectory cwd)
     if (fakieEnvConfigFile ^. filename) `notElem` fileList
       then do
-        liftIO .
-          putStrLn $ "[ERROR] No config file detected! We tried to look into " <> fakieEnvConfigFile
+        logErrorN $ "No config file detected! We tried to look into " <> T.pack fakieEnvConfigFile
         throwM (FakieException "No config file detected! Check the log file for errors.")
       else do
         fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> fakieEnvConfigFile)

@@ -109,10 +109,10 @@ $(deriveJSON (defaultOptions { fieldLabelModifier = camel . drop 14 }) ''Mapping
 
 data FakieEnv =
   FakieEnv
-    { fakieEnvLogFile      :: FilePath
-    , fakieEnvConfigFile   :: FilePath
+    { fakieEnvConfigFile   :: FilePath
     , fakieEnvOutputToFile :: Maybe FilePath
     , fakieEnvTesting      :: Bool
+    , fakieEnvMapping      :: Fakie
     }
 
 newtype ServerOptions =
@@ -122,7 +122,6 @@ newtype ServerOptions =
 
 data CmdOptions = CmdOptions
   { cmdOptionsConfigFile   :: Maybe FilePath
-  , cmdOptionsLogFile      :: Maybe FilePath
   , cmdOptionsOutputToFile :: Maybe FilePath
   , cmdOptionsServerPort   :: Int
   } deriving (Eq, Show)

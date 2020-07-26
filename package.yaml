@@ -1,5 +1,5 @@
 name:    fakie
-version: "0.0.0"
+version: "1.0.0"
 
 dependencies:
 
@@ -7,12 +7,10 @@ dependencies:
 - async
 - base >=4.9.1.0 && <5
 - bytestring
-- blaze-builder
 - casing
 - case-insensitive
 - containers
 - directory
-- fast-logger
 - filepath
 - text
 - template-haskell
@@ -31,6 +29,7 @@ dependencies:
 - network-uri
 - pretty-simple
 - mtl
+- monad-logger
 - lens
 - lens-aeson
 - warp

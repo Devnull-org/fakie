@@ -4,37 +4,27 @@
 module Main where
 
 import           Common
-import           Control.Monad.Reader        (runReaderT)
+import           Control.Exception.Safe (throwM)
+import           Control.Monad.Logger   (runStdoutLoggingT)
+import           Control.Monad.Reader   (runReaderT)
+import           Data.Time              (Day, fromGregorian, getCurrentTime,
+                                         utctDay)
 import           Options.Applicative
 import           Server
-import           Types                       (CmdOptions (..))
+import           Types                  (CmdOptions (..), FakieException (..))
+
+trialExpiration :: Maybe Day
+trialExpiration = Nothing
 
 options :: Parser CmdOptions
 options =
   CmdOptions
-    -- TODO: introduce this option in the next version
-    -- <$> optional
-    --      (strOption
-    --       ( long "store-to-file"
-    --        <> short 'f'
-    --        <> help "If you don't want to run the server you can get all of the API json data in a file"
-    --       )
-    --     )
     <$> optional
         ( strOption
            ( long "configuration-file"
              <> short 'c'
              <> help "Provide your configuration for Fakie server. \
                       \ Default place we look at is file named '.fakie.json'  \
-                      \ in current directory."
-           )
-         )
-    <*> optional
-        ( strOption
-           ( long "log-file"
-             <> short 'l'
-             <> help "Provide your log file for Fakie server. \
-                      \ Default place we log at is file named '.fakie.log'  \
                       \ in current directory."
            )
          )
@@ -54,11 +44,14 @@ options =
 
 main :: IO ()
 main = do
+  today <- utctDay <$> getCurrentTime
+  when (isJust trialExpiration && Just today > trialExpiration) $
+    throwM (FakieException "Trial license expired!")
   cmdOptions <- execParser opts
-  runReaderT serverStart cmdOptions
+  runReaderT (runStdoutLoggingT serverStart) cmdOptions
   where
+    opts :: ParserInfo CmdOptions
     opts = info (options <**> helper)
       ( fullDesc
      <> progDesc "Fakie - merge multiple API endpoints into results you control."
      <> header "Fakie - The ultimate API glue!" )
-
