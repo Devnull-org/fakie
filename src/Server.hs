@@ -118,6 +118,12 @@ fakieMiddleware fakieEnv _ req f = do
 redundantPaths :: [[Text]]
 redundantPaths = [["favicon.ico"]]
 
+-- | Check if the current path matches the one user specified in configuration
+checkPath :: [Text] -> Text -> Bool
+checkPath currentRoute rawRoute =
+  let wantedRoute = filter ("" /= ) (T.splitOn "/" rawRoute)
+  in currentRoute == wantedRoute
+
 handlePostRequest
   :: ( MonadIO m
      , MonadCatch m
@@ -146,7 +152,18 @@ handlePostRequest req = do
                    , mappingContextValue = Null
                    }
              Right apiResponse ->
-               return $ assignUserKeys cfg apiResponse
+               -- if current path matches the one in configuration try to assign user provided fields
+               -- otherwise return empty results
+               if checkPath path (fakieItemRoute cfg)
+                 then return $ assignUserKeys cfg apiResponse
+                 else
+                   return
+                     MappingContext
+                       { mappingContextFailures = []
+                       , mappingContextErrors = []
+                       , mappingContextValue = Null
+                       }
+
          ) (fakieEnvMapping fakieEnv)
       logInfoN "All calls are finished"
       let
