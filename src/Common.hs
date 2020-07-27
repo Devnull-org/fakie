@@ -7,6 +7,10 @@ module Common
   , IO
   , String
   , Text
+  , Eq
+  , FilePath
+  , State
+  , Word
   , module Data.Maybe
   , undefined
   , concat
@@ -22,28 +26,10 @@ module Common
   , null
   , otherwise
   , return
-  , (=<<)
-  , ($)
-  , (+)
-  , (.)
-  , (/=)
-  , (<$>)
-  , (==)
-  , id
-  , any
-  , fmap
-  , last
-  , (>>)
-  , (<>)
-  , (>)
-  , (<)
-  , Eq
-  , FilePath
   , drop
   , flip
   , evalState
   , evalStateT
-  , State
   , execState
   , execStateT
   , modify'
@@ -62,8 +48,23 @@ module Common
   , not
   , decodeUtf8
   , unpack
+  , isRight
   , (&&)
-  , Word
+  , (=<<)
+  , ($)
+  , (+)
+  , (.)
+  , (/=)
+  , (<$>)
+  , (==)
+  , id
+  , any
+  , fmap
+  , last
+  , (>>)
+  , (<>)
+  , (>)
+  , (<)
   ) where
 
 
@@ -72,6 +73,7 @@ import           Control.Monad.State (State, evalState, evalStateT, execState,
                                       execStateT, get, modify', put)
 import           Control.Monad.Trans (lift)
 import           Data.Bool           (bool)
+import           Data.Either         (isRight)
 import           Data.List           (filter, length, null)
 import           Data.Maybe
 import           Data.Text           (Text, unpack)
@@ -83,6 +85,6 @@ import           Prelude             (Bool (..), Either (..), Eq, FilePath, IO,
                                       flip, fmap, fromIntegral, fst, id, last,
                                       mapM, mapM_, not, notElem, otherwise,
                                       print, putStrLn, return, show, snd,
-                                      undefined, ($), (+), (.), (/=), (<), (&&),
+                                      undefined, ($), (&&), (+), (.), (/=), (<),
                                       (<$>), (<>), (=<<), (==), (>), (>>))
 import           Text.Read           (readMaybe)

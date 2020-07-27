@@ -6,22 +6,92 @@
 
 module Main where
 
-import           Control.Monad.Catch  (MonadThrow (..))
+import           Common
+import           Control.Exception.Safe (tryAny)
+import           Control.Monad.Catch    (MonadThrow (..))
+import           Control.Monad.Reader   (runReaderT)
 import           Data.Aeson
-import           Data.ByteString.Lazy (ByteString)
+import           Data.ByteString.Lazy   (ByteString)
 import           Data.HashMap.Strict
-import qualified Data.Vector          as V
+import qualified Data.Vector            as V
 import           Hedgehog
+import qualified Hedgehog.Gen           as Gen
 import           Mapping
-import           Prelude
-import           Text.RawString.QQ    (r)
+import           Server                 (callApi, checkPath)
+import           Text.RawString.QQ      (r)
 import           Types
 
 main :: IO Bool
 main =
-  checkParallel $ Group "Test Mapping" [
-      ("prop_findValueKey", prop_findValueKey)
-    ]
+  checkParallel $
+    Group "Test Mapping"
+      [ ("prop_findValueKey", prop_findValueKey)
+      , ("prop_callApi", prop_callApi)
+      , ("prop_checkPath", prop_checkPath)
+      ]
+
+prop_checkPath :: Property
+prop_checkPath = property $ do
+  let
+    route = "/api/someroute"
+    pathInfo = ["api", "someroute"]
+    checked = checkPath pathInfo route
+  assert checked
+  success
+
+prop_callApi :: Property
+prop_callApi = property $ do
+  fakieItem <- forAll genFakieItem
+  let fakieEnv =
+        FakieEnv
+          { fakieEnvConfigFile = ".fakie.json"
+          , fakieEnvOutputToFile = Nothing
+          , fakieEnvTesting = True
+          , fakieEnvMapping = []
+          }
+  eapiCall <- tryAny . evalIO $ runReaderT (callApi fakieItem "") fakieEnv
+  assert (isRight eapiCall)
+  success
+
+genFakieItem :: Gen FakieItem
+genFakieItem = do
+  name <- Gen.element ["stephanie", "lennart", "simon"]
+  route <- Gen.element ["/", "/api", "/api/user","//api/whatever/"]
+  method <- Gen.element [GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH]
+  url <- Gen.element ["https://google.com", "https://facebook.com"]
+  queryParam <- genFakieQueryParam
+  header <- genFakieHeader
+  return
+    FakieItem
+     { fakieItemName        = name
+     , fakieItemRoute       = route
+     , fakieItemMethod      = method
+     , fakieItemUrl         = url
+     , fakieItemQueryParams = [queryParam]
+     , fakieItemHeaders     = [header]
+     , fakieItemBody        = Nothing
+     , fakieItemMapping     = []
+     }
+
+genFakieQueryParam :: Gen FakieQueryParam
+genFakieQueryParam = do
+  name <- Gen.element ["user", "post"]
+  value <- Gen.element ["1", "2", "3", "4", "5"]
+  return
+    FakieQueryParam
+      { fakieQueryParamName  = name
+      , fakieQueryParamValue = value
+      }
+
+genFakieHeader :: Gen FakieHeader
+genFakieHeader = do
+  name <- Gen.element ["Content-Type"]
+  value <- Gen.element ["application/json", "plain-text"]
+  return
+    FakieHeader
+      { fakieHeaderName  = name
+      , fakieHeaderValue = value
+      }
 
 prop_findValueKey :: Property
 prop_findValueKey =
@@ -35,11 +105,22 @@ prop_findValueKey =
     findInPath "Object" objectWithEmptyList Nothing === Right (Object $ singleton "a" emptyArray)
     findInPath "Object.a" objectWithEmptyList Nothing === Right emptyArray
     findInPath "a.Array" objectWithEmptyList Nothing === Right emptyArray
+    findInPath "a" objectWithEmptyList Nothing === Right emptyArray
     findInPath "a.Array.nth-0.Object.b" objectWithListOfObjects Nothing === Right (Number 1)
+    findInPath "a.Array.nth-0.b" objectWithListOfObjects Nothing === Right (Number 1)
+    findInPath "a.nth-0.b" objectWithListOfObjects Nothing === Right (Number 1)
     findInPath "a.Array.nth-1.Object.c" objectWithListOfObjects Nothing === Right (String "some String")
+    findInPath "a.Array.nth-1.c" objectWithListOfObjects Nothing === Right (String "some String")
+    findInPath "a.nth-1.c" objectWithListOfObjects Nothing === Right (String "some String")
     findInPath "a.Array.nth-2.Object.d" objectWithListOfObjects Nothing ===
       Right (Array $ V.fromList $ Number <$> [1,2,3,4])
+    findInPath "a.Array.nth-2.d" objectWithListOfObjects Nothing ===
+      Right (Array $ V.fromList $ Number <$> [1,2,3,4])
+    findInPath "a.nth-2.d" objectWithListOfObjects Nothing ===
+      Right (Array $ V.fromList $ Number <$> [1,2,3,4])
     findInPath "Array.nth-2.Object.id" listOfObjects Nothing === Right (Number 3)
+    findInPath "Array.nth-1.id" listOfObjects Nothing === Right (Number 2)
+    findInPath "nth-1.id" listOfObjects Nothing === Right (Number 2)
 
 decodeToValue :: MonadThrow m => ByteString -> m Value
 decodeToValue bs =
