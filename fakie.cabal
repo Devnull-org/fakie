@@ -1,0 +1,170 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: d3b37db008753c62da627bf5a316d7d96ee0ffc9747e7ad65bc90d784f2fb1e3
+
+name:           fakie
+version:        1.0.0
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      Common
+      Mapping
+      Server
+      Types
+      Util
+  other-modules:
+      Paths_fakie
+  hs-source-dirs:
+      src
+  default-extensions: OverloadedStrings NoImplicitPrelude PatternSynonyms ScopedTypeVariables TemplateHaskell
+  ghc-options: -Wall -fwarn-tabs -O2
+  build-depends:
+      aeson
+    , async
+    , base >=4.9.1.0 && <5
+    , bytestring
+    , case-insensitive
+    , casing
+    , containers
+    , directory
+    , errors
+    , filepath
+    , http-client
+    , http-client-tls
+    , http-conduit
+    , http-types
+    , lens
+    , lens-aeson
+    , monad-logger
+    , mtl
+    , network-uri
+    , optparse-applicative
+    , pretty-simple
+    , safe-exceptions
+    , template-haskell
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , uri-encode
+    , vector
+    , wai
+    , wai-app-static
+    , wai-cors
+    , wai-extra
+    , wai-transformers
+    , wai-util
+    , warp
+    , yaml
+  default-language: Haskell2010
+
+executable fakie
+  main-is: Main.hs
+  other-modules:
+      Paths_fakie
+  hs-source-dirs:
+      app
+  default-extensions: OverloadedStrings NoImplicitPrelude PatternSynonyms ScopedTypeVariables TemplateHaskell
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , async
+    , base >=4.9.1.0 && <5
+    , bytestring
+    , case-insensitive
+    , casing
+    , containers
+    , directory
+    , errors
+    , fakie
+    , filepath
+    , http-client
+    , http-client-tls
+    , http-conduit
+    , http-types
+    , lens
+    , lens-aeson
+    , monad-logger
+    , mtl
+    , network-uri
+    , optparse-applicative
+    , pretty-simple
+    , safe-exceptions
+    , template-haskell
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , uri-encode
+    , vector
+    , wai
+    , wai-app-static
+    , wai-cors
+    , wai-extra
+    , wai-transformers
+    , wai-util
+    , warp
+    , yaml
+  default-language: Haskell2010
+
+test-suite fakie-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Paths_fakie
+  hs-source-dirs:
+      test
+  default-extensions: OverloadedStrings NoImplicitPrelude PatternSynonyms ScopedTypeVariables TemplateHaskell
+  ghc-options: -Wall
+  build-depends:
+      aeson
+    , async
+    , base >=4.9.1.0 && <5
+    , bytestring
+    , case-insensitive
+    , casing
+    , containers
+    , directory
+    , errors
+    , exceptions
+    , fakie
+    , filepath
+    , hedgehog
+    , hspec >=2.0.0
+    , http-client
+    , http-client-tls
+    , http-conduit
+    , http-types
+    , lens
+    , lens-aeson
+    , microlens
+    , monad-logger
+    , mtl
+    , network-uri
+    , optparse-applicative
+    , pretty-simple
+    , raw-strings-qq
+    , safe-exceptions
+    , template-haskell
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , uri-encode
+    , vector
+    , wai
+    , wai-app-static
+    , wai-cors
+    , wai-extra
+    , wai-transformers
+    , wai-util
+    , warp
+    , yaml
+  default-language: Haskell2010
