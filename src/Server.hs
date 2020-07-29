@@ -11,7 +11,6 @@ import qualified Control.Error                        as ER
 import           Control.Exception.Safe               (MonadCatch, MonadThrow,
                                                        SomeException (..),
                                                        throwM, tryAny)
-import           Control.Lens                         ((^.))
 import           Control.Monad.Logger                 (MonadLogger, logErrorN,
                                                        logInfoN,
                                                        runStdoutLoggingT)
@@ -49,10 +48,8 @@ import           Network.Wai.Handler.Warp             (defaultSettings,
                                                        setServerName)
 import           Network.Wai.Middleware.Cors          (simpleCors)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           System.Directory                     (getCurrentDirectory,
-                                                       listDirectory)
+import           System.Directory                     (getCurrentDirectory)
 import           System.FilePath                      ((</>))
-import           System.FilePath.Lens                 (filename)
 import           Types                                (CmdOptions (..), Fakie,
                                                        Fakie, FakieEnv (..),
                                                        FakieException (..),
@@ -75,8 +72,9 @@ serverStart = do
   CmdOptions {..} <- ask
   when (isNothing cmdOptionsConfigFile) $
     logInfoN "Could not find provided configuration file path. Defaulting to /.fakie.json"
+  cwd <- liftIO getCurrentDirectory
   let
-    fakieConfigFile = fromMaybe "/.fakie.json" cmdOptionsConfigFile
+    fakieConfigFile = fromMaybe (cwd </> "/.fakie.json") cmdOptionsConfigFile
     fakieEnv =
       FakieEnv
         { fakieEnvConfigFile = fakieConfigFile
@@ -86,14 +84,13 @@ serverStart = do
         }
   logInfoN "Fakie Api"
   logInfoN "reading configuration..."
-  econfig <- runReaderT readFakieConfig fakieEnv
+  econfig <- runReaderT readAndDecodeFakieConfig fakieEnv
   case econfig of
     Left (e :: SomeException) -> do
       logErrorN "Configuration error!"
       logErrorN "Fakie config could not be obtained."
-      logErrorN "Please check the log file to see what went wrong"
       logErrorN ("Configuration error : " <> T.pack (show e))
-      throwM (FakieException "failure")
+      throwM (FakieException "Configuration file failure. Please double check the file path.")
     Right fakieConfig -> do
       logInfoN $ "Configuration read from " <> T.pack fakieConfigFile
       logInfoN "Calling configured endpoints to get the data..."
@@ -209,25 +206,18 @@ maybeOutputToFile mOutputToFile val =
   when (isJust mOutputToFile) $
     liftIO $ BSL.writeFile (fromJust mOutputToFile) (encode val)
 
-readFakieConfig
+readAndDecodeFakieConfig
   :: ( MonadIO m
      , MonadThrow m
      , MonadReader FakieEnv m
      , MonadLogger m)
   => m (Either SomeException Fakie)
-readFakieConfig =
+readAndDecodeFakieConfig =
   ER.runExceptT $ do
     FakieEnv {..} <- lift ask
-    cwd <- ER.ExceptT $ liftIO (tryAny getCurrentDirectory)
-    fileList <- ER.ExceptT $ liftIO (tryAny $ listDirectory cwd)
-    if (fakieEnvConfigFile ^. filename) `notElem` fileList
-      then do
-        logErrorN $ "No config file detected! We tried to look into " <> T.pack fakieEnvConfigFile
-        throwM (FakieException "No config file detected! Check the log file for errors.")
-      else do
-        fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile $ cwd </> fakieEnvConfigFile)
-        ER.hoistEither $
-          ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
+    fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile fakieEnvConfigFile)
+    ER.hoistEither $
+      ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
 
 callApi
   :: ( MonadIO m

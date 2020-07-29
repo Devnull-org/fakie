@@ -49,6 +49,7 @@ module Common
   , decodeUtf8
   , unpack
   , isRight
+  , fromRight
   , (&&)
   , (=<<)
   , ($)
@@ -73,7 +74,7 @@ import           Control.Monad.State (State, evalState, evalStateT, execState,
                                       execStateT, get, modify', put)
 import           Control.Monad.Trans (lift)
 import           Data.Bool           (bool)
-import           Data.Either         (isRight)
+import           Data.Either         (isRight, fromRight)
 import           Data.List           (filter, length, null)
 import           Data.Maybe
 import           Data.Text           (Text, unpack)

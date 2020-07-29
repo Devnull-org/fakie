@@ -24,8 +24,8 @@ options =
            ( long "configuration-file"
              <> short 'c'
              <> help "Provide your configuration for Fakie server. \
-                      \ Default place we look at is file named '.fakie.json'  \
-                      \ in current directory."
+                    \ Default place we look at is file named '.fakie.json' \
+                    \ in current working directory."
            )
          )
     <*> optional

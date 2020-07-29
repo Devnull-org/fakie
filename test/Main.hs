@@ -9,6 +9,7 @@ module Main where
 import           Common
 import           Control.Exception.Safe (tryAny)
 import           Control.Monad.Catch    (MonadThrow (..))
+import           Control.Monad.Logger   (runNoLoggingT)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.Aeson
 import           Data.ByteString.Lazy   (ByteString)
@@ -17,7 +18,10 @@ import qualified Data.Vector            as V
 import           Hedgehog
 import qualified Hedgehog.Gen           as Gen
 import           Mapping
-import           Server                 (callApi, checkPath)
+import           Server                 (callApi, checkPath,
+                                         readAndDecodeFakieConfig)
+import           System.Directory       (getCurrentDirectory)
+import           System.FilePath        ((</>))
 import           Text.RawString.QQ      (r)
 import           Types
 
@@ -28,6 +32,7 @@ main =
       [ ("prop_findValueKey", prop_findValueKey)
       , ("prop_callApi", prop_callApi)
       , ("prop_checkPath", prop_checkPath)
+      , ("prop_readAndDecodeFakieConfig", prop_readAndDecodeFakieConfig)
       ]
 
 prop_checkPath :: Property
@@ -37,6 +42,29 @@ prop_checkPath = property $ do
     pathInfo = ["api", "someroute"]
     checked = checkPath pathInfo route
   assert checked
+  success
+
+prop_readAndDecodeFakieConfig :: Property
+prop_readAndDecodeFakieConfig = property $ do
+  cwd <- evalIO getCurrentDirectory
+  let
+    configPath = cwd </> "test" </> ".testConf.json"
+    fakieEnv =
+      FakieEnv
+        { fakieEnvConfigFile = configPath
+        , fakieEnvOutputToFile = Nothing
+        , fakieEnvTesting = True
+        , fakieEnvMapping = []
+        }
+  configuration <-
+    evalIO $ runNoLoggingT $ runReaderT readAndDecodeFakieConfig fakieEnv
+  assert (isRight configuration)
+  let expectedConfItemName =
+        fakieItemName <$>
+          Common.filter
+            (\a -> fakieItemRoute a == "/api/placeholder")
+            (fromRight [] configuration)
+  expectedConfItemName === ["jsonplaceholder api"]
   success
 
 prop_callApi :: Property
@@ -53,6 +81,7 @@ prop_callApi = property $ do
   assert (isRight eapiCall)
   success
 
+-- FIXME: generate random routes instead of hardcoded ones
 genFakieItem :: Gen FakieItem
 genFakieItem = do
   name <- Gen.element ["stephanie", "lennart", "simon"]
@@ -112,11 +141,11 @@ prop_findValueKey =
     findInPath "a.Array.nth-1.Object.c" objectWithListOfObjects Nothing === Right (String "some String")
     findInPath "a.Array.nth-1.c" objectWithListOfObjects Nothing === Right (String "some String")
     findInPath "a.nth-1.c" objectWithListOfObjects Nothing === Right (String "some String")
-    findInPath "a.Array.nth-2.Object.d" objectWithListOfObjects Nothing ===
+    findInPath "a.Array.nth-2.Object.d.nth-0.e" objectWithListOfObjects Nothing ===
       Right (Array $ V.fromList $ Number <$> [1,2,3,4])
-    findInPath "a.Array.nth-2.d" objectWithListOfObjects Nothing ===
+    findInPath "a.Array.nth-2.d.nth-0.e" objectWithListOfObjects Nothing ===
       Right (Array $ V.fromList $ Number <$> [1,2,3,4])
-    findInPath "a.nth-2.d" objectWithListOfObjects Nothing ===
+    findInPath "a.nth-2.d.nth-0.e" objectWithListOfObjects Nothing ===
       Right (Array $ V.fromList $ Number <$> [1,2,3,4])
     findInPath "Array.nth-2.Object.id" listOfObjects Nothing === Right (Number 3)
     findInPath "Array.nth-1.id" listOfObjects Nothing === Right (Number 2)
@@ -133,7 +162,22 @@ jsonObjectWithEmptyList :: ByteString
 jsonObjectWithEmptyList = [r|{"a":[]} |]
 
 jsonObjectWithListOfObjects :: ByteString
-jsonObjectWithListOfObjects = [r|{"a":[{"b":1},{"c":"some String"},{"d":[1,2,3,4]}]} |]
+jsonObjectWithListOfObjects =
+  [r|
+    {"a":
+      [
+        {"b":1}
+       ,{"c":"some String"}
+       ,{"d":
+          [
+            {"e":
+              [1,2,3,4]
+            }
+          ]
+        }
+      ]
+    }
+  |]
 
 jsonListOfObjects :: ByteString
 jsonListOfObjects =
