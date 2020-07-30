@@ -10,6 +10,8 @@ module Util
   , returnText
   , returnJson
   , returnJsonError
+  , returnJsonFatal
+  , returnJsonNotAllowed
   , redirectSuccess
   , respond500
   ) where
@@ -20,7 +22,8 @@ import           Control.Lens
 import           Data.Aeson                (ToJSON, encode)
 import qualified Data.ByteString.Lazy      as LBS
 import           Network.HTTP.Types        (StdMethod (..), status200,
-                                            status308, status402)
+                                            status308, status402, status405,
+                                            status409)
 import           Network.HTTP.Types.Header (hContentType)
 import           Network.URI               (parseURI)
 import           Network.Wai
@@ -60,6 +63,20 @@ returnJsonError :: ToJSON a => a -> Response
 returnJsonError content =
   responseLBS
     status402
+    [(hContentType, "application/json")]
+    (encode content)
+
+returnJsonFatal :: ToJSON a => a -> Response
+returnJsonFatal content =
+  responseLBS
+    status409
+    [(hContentType, "application/json")]
+    (encode content)
+
+returnJsonNotAllowed :: ToJSON a => a -> Response
+returnJsonNotAllowed content =
+  responseLBS
+    status405
     [(hContentType, "application/json")]
     (encode content)
 

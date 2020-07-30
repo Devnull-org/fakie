@@ -7,8 +7,7 @@ import           Common
 import           Control.Exception.Safe (throwM)
 import           Control.Monad.Logger   (runStdoutLoggingT)
 import           Control.Monad.Reader   (runReaderT)
-import           Data.Time              (Day, fromGregorian, getCurrentTime,
-                                         utctDay)
+import           Data.Time              (Day, getCurrentTime, utctDay)
 import           Options.Applicative
 import           Server
 import           Types                  (CmdOptions (..), FakieException (..))

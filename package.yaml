@@ -28,6 +28,7 @@ dependencies:
 - optparse-applicative
 - network-uri
 - pretty-simple
+- pretty
 - mtl
 - monad-logger
 - lens

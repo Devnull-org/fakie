@@ -8,7 +8,8 @@ module Server where
 import           Common
 import           Control.Concurrent.Async             (mapConcurrently)
 import qualified Control.Error                        as ER
-import           Control.Exception.Safe               (MonadCatch, MonadThrow,
+import           Control.Exception.Safe               (Exception, MonadCatch,
+                                                       MonadThrow,
                                                        SomeException (..),
                                                        throwM, tryAny)
 import           Control.Monad.Logger                 (MonadLogger, logErrorN,
@@ -50,6 +51,7 @@ import           Network.Wai.Middleware.Cors          (simpleCors)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import           System.Directory                     (getCurrentDirectory)
 import           System.FilePath                      ((</>))
+import           Text.PrettyPrint                     (render, text, ($$))
 import           Types                                (CmdOptions (..), Fakie,
                                                        Fakie, FakieEnv (..),
                                                        FakieException (..),
@@ -59,7 +61,9 @@ import           Types                                (CmdOptions (..), Fakie,
                                                        FakieResult (..),
                                                        MappingContext (..))
 import           Util                                 (returnJson,
-                                                       returnJsonError)
+                                                       returnJsonError,
+                                                       returnJsonFatal,
+                                                       returnJsonNotAllowed)
 
 serverStart
   :: ( MonadIO m
@@ -82,18 +86,21 @@ serverStart = do
         , fakieEnvTesting = False
         , fakieEnvMapping = []
         }
-  logInfoN "Fakie Api"
-  logInfoN "reading configuration..."
+  logInfoN . T.pack . render $
+    text "Fakie Api" $$
+    text "reading configuration..."
   econfig <- runReaderT readAndDecodeFakieConfig fakieEnv
   case econfig of
     Left (e :: SomeException) -> do
-      logErrorN "Configuration error!"
-      logErrorN "Fakie config could not be obtained."
-      logErrorN ("Configuration error : " <> T.pack (show e))
+      logErrorN . T.pack . render $
+        text "Configuration error!" $$
+        text "Fakie config could not be obtained." $$
+        text (show e)
       throwM (FakieException "Configuration file failure. Please double check the file path.")
     Right fakieConfig -> do
-      logInfoN $ "Configuration read from " <> T.pack fakieConfigFile
-      logInfoN "Calling configured endpoints to get the data..."
+      logInfoN . T.pack . render $
+        text ("Configuration read from " <> fakieConfigFile) $$
+        text "Calling configured endpoints to get the data..."
       let
         fakieEnvWithMapping = fakieEnv { fakieEnvMapping = fakieConfig }
         settings = setServerName "Fakie API Server" (setPort cmdOptionsServerPort defaultSettings)
@@ -107,7 +114,7 @@ fakieMiddleware fakieEnv _ req f = do
     case requestMethod req of
       "POST"  -> runStdoutLoggingT (flip runReaderT fakieEnv $ handlePostRequest req)
       _ ->
-        throwM (FakieException $ "Method not handled " <>
+        return $ returnJsonNotAllowed ("Method not allowed " <>
                 T.unpack (decodeUtf8 $ requestMethod req)
                )
   liftIO $ f response
@@ -140,31 +147,12 @@ handlePostRequest req = do
         mapConcurrently
          (\cfg -> flip runReaderT fakieEnv $ do
            eApiResponse <- tryAny (callApi cfg body)
-           case eApiResponse of
-             Left err ->
-               return $
-                 MappingContext
-                   { mappingContextFailures = [T.pack $ show err]
-                   , mappingContextErrors = []
-                   , mappingContextValue = Null
-                   }
-             Right apiResponse ->
-               -- if current path matches the one in configuration try to assign user provided fields
-               -- otherwise return empty results
-               if checkPath path (fakieItemRoute cfg)
-                 then return $ assignUserKeys cfg apiResponse
-                 else
-                   return
-                     MappingContext
-                       { mappingContextFailures = []
-                       , mappingContextErrors = []
-                       , mappingContextValue = Null
-                       }
-
+           handleApiResponse eApiResponse path cfg
          ) (fakieEnvMapping fakieEnv)
       logInfoN "All calls are finished"
       let
         errors = mappingContextErrors <$> v
+        -- if any of the requests return error list that is not empty we need to fail
         thereAreFatalErrors = False `elem` (null <$> errors)
       if thereAreFatalErrors
         then
@@ -174,32 +162,68 @@ handlePostRequest req = do
               T.intercalate "," (L.concat errors)
             )
         else do
-          eWritten <- tryAny (maybeOutputToFile (fakieEnvOutputToFile fakieEnv) (toJSON $ mappingContextValue <$> v))
+          eWritten <-
+            tryAny
+              (maybeOutputToFile
+                 (fakieEnvOutputToFile fakieEnv)
+                 (toJSON $ mappingContextValue <$> v)
+              )
           case eWritten of
-            Left err -> throwM (FakieException $ "Could not write to output file! " <> show err)
+            Left err ->
+              return $ returnJsonFatal ("Could not write to output file! " <> show err)
             Right _ -> do
               let
                 failList = L.concat $ mappingContextFailures <$> v
                 failures
                   | not (null failList) = Just $ T.intercalate "," failList
                   | otherwise = Nothing
+                (value, message) =
+                  case fakieEnvOutputToFile fakieEnv of
+                    Nothing ->
+                      (mappingContextValue <$> v, "")
+                    Just outputPath ->
+                      ([], "Response redirected to file: " <> T.pack outputPath)
                 response =
                   FakieResult
                     { fakieResultFailures = failures
-                    , fakieResultValue =
-                        maybe
-                          (mappingContextValue <$> v)
-                          (const [])
-                          (fakieEnvOutputToFile fakieEnv)
-                    , fakieResultMessage =
-                        maybe
-                          ""
-                          (\outputPath ->
-                              "Response redirected to file: " <> T.pack outputPath
-                          )
-                          (fakieEnvOutputToFile fakieEnv)
+                    , fakieResultValue = value
+                    , fakieResultMessage = message
                     }
               return $ returnJson (toJSON response)
+
+handleApiResponse
+  :: ( MonadIO m
+     , Show a
+     , Exception a
+     )
+  => Either a Value
+  -> [Text]
+  -> FakieItem
+  -> m MappingContext
+handleApiResponse eApiResponse path cfg =
+  case eApiResponse of
+    Left err ->
+      return $
+        MappingContext
+          { mappingContextFailures =
+              [T.pack $ "Api request failed. Here is the complete error message: "
+              <> show err
+              ]
+          , mappingContextErrors = []
+          , mappingContextValue = Null
+          }
+    Right apiResponse ->
+      -- if current path matches the one in configuration try to assign user provided fields
+      -- otherwise return empty results
+      if checkPath path (fakieItemRoute cfg)
+        then return $ assignUserKeys cfg apiResponse
+        else
+          return
+            MappingContext
+              { mappingContextFailures = []
+              , mappingContextErrors = []
+              , mappingContextValue = Null
+              }
 
 maybeOutputToFile :: MonadIO m => Maybe FilePath -> Value -> m ()
 maybeOutputToFile mOutputToFile val =
@@ -217,7 +241,9 @@ readAndDecodeFakieConfig =
     FakieEnv {..} <- lift ask
     fileContents <- ER.ExceptT $ liftIO $ tryAny (BSL.readFile fakieEnvConfigFile)
     ER.hoistEither $
-      ER.fmapL (SomeException . FakieException) (eitherDecode fileContents :: Either String [FakieItem])
+      ER.fmapL
+        (SomeException . FakieException)
+        (eitherDecode fileContents :: Either String [FakieItem])
 
 callApi
   :: ( MonadIO m
@@ -243,7 +269,12 @@ callApi fItem rBody = do
                      <> T.unpack (fakieItemUrl fItem)
                )
          case erequest of
-           Left err -> throwM (FakieException (show err))
+           Left err ->
+             throwM
+               (FakieException $
+                  "Error message: "
+                 <> show err
+               )
            Right request'' -> do
              -- | All request bodies need to contain json key that matches the
              -- 'name' field in the json configuration for the specific configuration item
@@ -264,7 +295,7 @@ callApi fItem rBody = do
                request = setUpRequestBody request' fakieItem
              response <- httpJSONEither request
              case getResponseBody response :: Either JSONException Value of
-               Left err -> throwM (FakieException (show err))
+               Left err -> throwM (FakieException ("YO:" <> show err))
                Right respBody -> do
                  when (getResponseStatusCode response /= 200) $
                    throwM (FakieException "Received non 200 status code!")

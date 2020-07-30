@@ -4,11 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d3b37db008753c62da627bf5a316d7d96ee0ffc9747e7ad65bc90d784f2fb1e3
+-- hash: 1d5c5955e44b2c6e9ab64b77779a52b9ec60baf95ed7790627ab4e6ee3525ffb
 
 name:           fakie
 version:        1.0.0
-license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
 
@@ -46,6 +45,7 @@ library
     , mtl
     , network-uri
     , optparse-applicative
+    , pretty
     , pretty-simple
     , safe-exceptions
     , template-haskell
@@ -95,6 +95,7 @@ executable fakie
     , mtl
     , network-uri
     , optparse-applicative
+    , pretty
     , pretty-simple
     , safe-exceptions
     , template-haskell
@@ -149,6 +150,7 @@ test-suite fakie-test
     , mtl
     , network-uri
     , optparse-applicative
+    , pretty
     , pretty-simple
     , raw-strings-qq
     , safe-exceptions
