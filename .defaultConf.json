@@ -1,7 +1,7 @@
 [
   {
-    "name" : "jsonplaceholder api",
-    "route" : "/api/placeholder",
+    "name" : "testApi1",
+    "route" : "/",
     "method" : "GET",
     "url" : "https://jsonplaceholder.typicode.com/posts",
     "queryParams":
@@ -25,10 +25,10 @@
           "theirkey" : "Array",
           "shouldKeep": false
         },
-        { "ourkey" : "ourtitle",
+        { "ourkey" : "our-id",
           "theirkey" : "all.nth-0.id"
         },
-        { "ourkey" : "janakida",
+        { "ourkey" : "ourBody",
           "theirkey" : "body"
         },
         { "ourkey" : "ident",
@@ -41,8 +41,8 @@
   },
 
   {
-    "name" : "yo test api",
-    "route" : "/api/yo/test",
+    "name" : "testApi2",
+    "route" : "/",
     "method" : "GET",
     "url" : "https://jsonplaceholder.typicode.com/posts",
     "queryParams":
@@ -62,10 +62,10 @@
     "body": {"requestBody": "some test request body"},
     "mapping":
       [
-        { "ourkey" : "mytitlefromarray",
+        { "ourkey" : "mytitlefromsecondarrayelement",
           "theirkey" : "Array.nth-2.title"
         },
-        { "ourkey" : "skateordie",
+        { "ourkey" : "mybody",
           "theirkey" : "body"
         },
         { "ourkey" : "identifier",

@@ -75,10 +75,10 @@ serverStart
 serverStart = do
   CmdOptions {..} <- ask
   when (isNothing cmdOptionsConfigFile) $
-    logInfoN "Could not find provided configuration file path. Defaulting to /.fakie.json"
+    logInfoN "No configuration file specified. Defaulting to .fakie.json"
   cwd <- liftIO getCurrentDirectory
   let
-    fakieConfigFile = fromMaybe (cwd </> "/.fakie.json") cmdOptionsConfigFile
+    fakieConfigFile = fromMaybe (cwd </> ".fakie.json") cmdOptionsConfigFile
     fakieEnv =
       FakieEnv
         { fakieEnvConfigFile = fakieConfigFile
