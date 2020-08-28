@@ -276,10 +276,10 @@ callApi fItem rBody = do
                  <> show err
                )
            Right request'' -> do
-             -- | All request bodies need to contain json key that matches the
-             -- 'name' field in the json configuration for the specific configuration item
-             -- If that key does not exist or we could not find it it means we are not trying to
-             -- send any dynamic data to the endpoint.
+             {-- | All request bodies need to contain json key that matches the
+                 'name' field in the json configuration for the specific configuration item
+                 If that key does not exist or we could not find it it means we are not trying to
+                 send any dynamic data to the endpoint. --}
              let
                decodedBody = decode (BSL.fromStrict rBody) :: Maybe Value
                eFoundJsonItemKey =

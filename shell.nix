@@ -9,20 +9,19 @@ let
       sha256 = "1ak7jqx94fjhc68xh1lh35kh3w3ndbadprrb762qgvcfb8351x8v";
     };
   unstable = import pinnedUnstable {};
-  finalPackage = {mkDerivation, hpack, hlint, stack, stdenv}:
-    mkDerivation {
-      pname = "fakie";
-      version = "1.0.0";
-      src = ./.;
-      isLibrary = true;
-      isExecutable = true;
-      libraryToolDepends = [ hpack stack hlint];
-      librarySystemDepends = [ pkgs.zlib ];
-      prePatch = "hpack";
-      license = stdenv.lib.licenses.bsd3;
-      shellHook = ''
-       '';
-    };
+  origBuild = (import ./default.nix) {};
+
+  finalPackage = pkgs.haskell.lib.overrideCabal origBuild (drv: {
+    libraryToolDepends = drv.libraryToolDepends ++ [
+      pkgs.stack
+      pkgs.hlint
+      pkgs.stdenv
+    ];
+    librarySystemDepends = [ pkgs.zlib ];
+    license = pkgs.stdenv.lib.licenses.bsd3;
+    shellHook = ''
+      '';
+  });
 
   haskellGhc =
     if compiler == "default"
