@@ -1,2 +1,4 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc884" }:
-nixpkgs.pkgs.haskell.packages.${compiler}.callPackage ./fakie.nix { }
+let
+  pkgs = import <nixpkgs> { };
+in
+  pkgs.haskellPackages.callPackage ./fakie.nix { }

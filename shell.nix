@@ -9,36 +9,31 @@ let
       sha256 = "1ak7jqx94fjhc68xh1lh35kh3w3ndbadprrb762qgvcfb8351x8v";
     };
   unstable = import pinnedUnstable {};
-  origBuild = (import ./default.nix) {};
-
-  finalPackage = pkgs.haskell.lib.overrideCabal origBuild (drv: {
-    libraryToolDepends = drv.libraryToolDepends ++ [
-      pkgs.stack
-      pkgs.hlint
-      pkgs.stdenv
-    ];
-    librarySystemDepends = [ pkgs.zlib ];
-    license = pkgs.stdenv.lib.licenses.bsd3;
-    shellHook = ''
-      '';
-  });
-
-  haskellGhc =
-    if compiler == "default"
-      then pkgs.haskellGhc
-      else unstable.haskell.packages.${compiler};
-
+  ghcVersion = unstable.haskell.packages.${compiler};
   hspkgs =
     if withHoogle
        then
-         haskellGhc.override {
+         ghcVersion.override {
            overrides = (self: super: {
              ghc = super.ghc // { withPackages = super.ghc.withHoogle; };
              ghcWithPackages = self.ghc.withPackages;
            });
          }
-       else haskellGhc;
+       else ghcVersion;
 
-  drv = hspkgs.callPackage finalPackage {};
+  origBuild = hspkgs.callPackage ./fakie.nix {};
+  drv = unstable.haskell.lib.overrideCabal origBuild (drv: {
+    libraryToolDepends = drv.libraryToolDepends ++ [
+      unstable.stack
+      unstable.hlint
+      unstable.ghcid
+      unstable.stdenv
+    ];
+    librarySystemDepends = [ unstable.zlib ];
+    license = unstable.stdenv.lib.licenses.bsd3;
+    shellHook = ''
+      '';
+  });
+
 in
   if pkgs.lib.inNixShell then drv.env else drv
