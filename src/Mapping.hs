@@ -20,8 +20,6 @@ import qualified Control.Error       as ER
 import           Data.Aeson
 import           Data.HashMap.Strict (delete, empty, insert, lookup)
 import           Data.List           (tail)
-import           Data.Maybe          (isNothing)
-import           Data.Text           (Text)
 import qualified Data.Text           as T
 import qualified Data.Vector         as V
 import           Types

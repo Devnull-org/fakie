@@ -81,7 +81,7 @@ import           Data.Text           (Text, unpack)
 import           Data.Text.Encoding  (decodeUtf8)
 import           Debug.Pretty.Simple (pTraceShow, pTraceShowM)
 import           Prelude             (Bool (..), Either (..), Eq, FilePath, IO,
-                                      Int, Maybe (..), Show (..), String, Word,
+                                      Int, Show (..), String, Word,
                                       any, concat, const, drop, elem, error,
                                       flip, fmap, fromIntegral, fst, id, last,
                                       mapM, mapM_, not, notElem, otherwise,

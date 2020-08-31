@@ -18,6 +18,7 @@ library
       Server
       Types
       Util
+      Gui.Gui
   other-modules:
       Paths_fakie
   hs-source-dirs:
@@ -63,6 +64,9 @@ library
     , wai-util
     , warp
     , yaml
+    , gi-gtk
+    , haskell-gi-base
+
   default-language: Haskell2010
 
 executable fakie

@@ -16,7 +16,6 @@ module Types
 import           Control.Exception.Safe (Exception)
 import           Data.Aeson
 import           Data.Aeson.TH
-import           Data.Text              (Text)
 import           Text.Casing            (camel)
 import           Common
 import           Network.Wai.Handler.Warp (Port)
@@ -124,6 +123,7 @@ data CmdOptions = CmdOptions
   { cmdOptionsConfigFile   :: Maybe FilePath
   , cmdOptionsOutputToFile :: Maybe FilePath
   , cmdOptionsServerPort   :: Int
+  , cmdOptionsGui          :: Maybe String
   } deriving (Eq, Show)
 
 data FakieResult =

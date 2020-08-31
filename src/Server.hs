@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -26,7 +25,6 @@ import qualified Data.ByteString.Lazy                 as BSL
 import qualified Data.CaseInsensitive                 as CI
 import qualified Data.List                            as L
 import qualified Data.Text                            as T
-import           Data.Text.Encoding                   (decodeUtf8)
 import           Mapping                              (assignUserKeys,
                                                        findValueKey)
 import qualified Network.HTTP.Client                  as Client
@@ -255,13 +253,14 @@ callApi
   -> m Value
 callApi fItem rBody = do
   FakieEnv {..} <- ask
-  if | fakieEnvTesting -> liftIO $ do
+  if fakieEnvTesting
+    then liftIO $ do
         ebody <- BSL.readFile "/home/v0d1ch/code/fakie/src/json/Posts.json"
         case eitherDecode ebody :: Either String Value of
           Left err ->
             throwM (FakieException $ show err)
           Right body -> return body
-     | otherwise -> liftIO $ do
+    else liftIO $ do
          erequest <-
            tryAny $
              Client.parseUrlThrow

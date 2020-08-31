@@ -23,11 +23,12 @@ let
 
   origBuild = hspkgs.callPackage ./fakie.nix {};
   drv = unstable.haskell.lib.overrideCabal origBuild (drv: {
-    libraryToolDepends = drv.libraryToolDepends ++ [
+    libraryToolDepends = [
       unstable.stack
       unstable.hlint
       unstable.ghcid
       unstable.stdenv
+      unstable.pkg-config
     ];
     librarySystemDepends = [ unstable.zlib ];
     license = unstable.stdenv.lib.licenses.bsd3;

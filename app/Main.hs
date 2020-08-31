@@ -8,9 +8,11 @@ import           Control.Exception.Safe (throwM)
 import           Control.Monad.Logger   (runStdoutLoggingT)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.Time              (Day, getCurrentTime, utctDay)
+import           Gui.Gui                (gui)
 import           Options.Applicative
 import           Server
 import           Types                  (CmdOptions (..), FakieException (..))
+
 
 trialExpiration :: Maybe Day
 trialExpiration = Nothing
@@ -40,6 +42,13 @@ options =
          <> short 'p'
          <> help "Specify the port for the Fakie server"
         )
+    <*> optional
+        ( strOption
+           ( long "gui"
+             <> short 'g'
+             <> help "Start a gui version of the app."
+           )
+         )
 
 main :: IO ()
 main = do
@@ -47,7 +56,10 @@ main = do
   when (isJust trialExpiration && Just today > trialExpiration) $
     throwM (FakieException "Trial license expired!")
   cmdOptions <- execParser opts
-  runReaderT (runStdoutLoggingT serverStart) cmdOptions
+  case cmdOptionsGui cmdOptions of
+    Nothing ->
+      runReaderT (runStdoutLoggingT serverStart) cmdOptions
+    Just _ -> gui
   where
     opts :: ParserInfo CmdOptions
     opts = info (options <**> helper)
